@@ -1,0 +1,36 @@
+version: '3.9'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: superbook
+      POSTGRES_USER: superbook
+      POSTGRES_PASSWORD: superbook_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U superbook']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://superbook:superbook_pass@db:5432/superbook
+      SESSION_SECRET: ${SESSION_SECRET}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    ports:
+      - '3000:3000'
+
+volumes:
+  pgdata:

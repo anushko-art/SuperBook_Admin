@@ -144,13 +144,14 @@ export default function DocViewerPage({ params }: { params: Promise<{ id: string
 
   const Preview = (
     <div className="h-full overflow-y-auto p-6">
-      <ReactMarkdown
-        className="prose max-w-none"
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-      >
-        {content || '*No content yet*'}
-      </ReactMarkdown>
+      <div className="prose max-w-none">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+        >
+          {content || '*No content yet*'}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 
@@ -216,9 +217,11 @@ export default function DocViewerPage({ params }: { params: Promise<{ id: string
               {/* main content below */}
             </TabsContent>
             <TabsContent value="exercises" className="mt-0 p-4 overflow-y-auto max-h-64">
-              <ReactMarkdown className="prose max-w-none text-sm" remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                {data.exercises}
-              </ReactMarkdown>
+              <div className="prose max-w-none text-sm">
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                  {data.exercises}
+                </ReactMarkdown>
+              </div>
             </TabsContent>
           </Tabs>
         </div>

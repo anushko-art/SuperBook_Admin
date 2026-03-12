@@ -28,13 +28,13 @@ export function VisualRenderer({ schema, className }: Props) {
   const inner = (() => {
     switch (componentType) {
       case 'MIND_MAP_GENERATION':
-        return <MindMapRenderer data={data as Parameters<typeof MindMapRenderer>[0]['data']} />;
+        return <MindMapRenderer data={data as unknown as Parameters<typeof MindMapRenderer>[0]['data']} />;
       case 'FLOWCHART_GENERATION':
-        return <FlowchartRenderer data={data as Parameters<typeof FlowchartRenderer>[0]['data']} />;
+        return <FlowchartRenderer data={data as unknown as Parameters<typeof FlowchartRenderer>[0]['data']} />;
       case 'COMPARISON_TABLE':
-        return <ComparisonTableRenderer data={data as Parameters<typeof ComparisonTableRenderer>[0]['data']} />;
+        return <ComparisonTableRenderer data={data as unknown as Parameters<typeof ComparisonTableRenderer>[0]['data']} />;
       case 'INFOGRAPHIC_GENERATION':
-        return <InfographicRenderer data={data as Parameters<typeof InfographicRenderer>[0]['data']} />;
+        return <InfographicRenderer data={data as unknown as Parameters<typeof InfographicRenderer>[0]['data']} />;
       default:
         return (
           <div className="p-4 text-sm text-[hsl(var(--muted-foreground))] text-center">

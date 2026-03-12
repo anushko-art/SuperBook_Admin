@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getSignoutCookieOptions } from '@/lib/auth';
+import { createClient } from '@/lib/supabase/server';
 
 export async function POST() {
-  const res = NextResponse.json({ ok: true });
-  res.cookies.set(getSignoutCookieOptions());
-  return res;
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    await supabase.auth.signOut();
+  }
+
+  return NextResponse.json({ ok: true });
 }

@@ -21,6 +21,8 @@ export default function SignUpPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      // Use the API route so the server can create both the
+      // Supabase Auth user and the app-level users table row.
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

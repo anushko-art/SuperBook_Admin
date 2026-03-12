@@ -1,13 +1,10 @@
-import { SignJWT, jwtVerify } from 'jose';
-import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
+import { query } from '@/lib/db';
 
-const SECRET = new TextEncoder().encode(
-  process.env.SESSION_SECRET ?? 'superbook-dev-secret-change-in-production-32chars'
-);
-
-const COOKIE_NAME = 'sb_session';
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
-
+/**
+ * Session payload — same shape as before so all consumers
+ * (server pages, API routes) keep working.
+ */
 export interface SessionPayload {
   userId: string;
   email: string;
@@ -15,50 +12,43 @@ export interface SessionPayload {
   displayName: string;
 }
 
-export async function createSession(payload: SessionPayload): Promise<string> {
-  return new SignJWT({ ...payload })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(SECRET);
-}
+/**
+ * Get the current user session from Supabase Auth.
+ *
+ * Returns the same SessionPayload shape the app has always used,
+ * bridging the Supabase Auth user to the existing `users` table.
+ */
+export async function getSession(): Promise<SessionPayload | null> {
+  const supabase = await createClient();
 
-export async function verifySession(token: string): Promise<SessionPayload | null> {
-  try {
-    const { payload } = await jwtVerify(token, SECRET);
-    return payload as unknown as SessionPayload;
-  } catch {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  // Look up the app-level user record that corresponds to this auth user
+  const [appUser] = await query<{
+    id: string;
+    email: string;
+    display_name: string;
+    role: string;
+  }>(
+    `SELECT id, email, display_name, role FROM users WHERE id = $1`,
+    [user.id]
+  );
+
+  if (!appUser) {
+    // Auth user exists but no matching row in the users table yet.
+    // This can happen for brand-new signups — the signup handler
+    // creates the row, but if it's somehow missing, return null.
     return null;
   }
-}
 
-export async function getSession(): Promise<SessionPayload | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(COOKIE_NAME)?.value;
-  if (!token) return null;
-  return verifySession(token);
-}
-
-export function getSessionCookieOptions(token: string) {
   return {
-    name: COOKIE_NAME,
-    value: token,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
-    maxAge: COOKIE_MAX_AGE,
-    path: '/',
-  };
-}
-
-export function getSignoutCookieOptions() {
-  return {
-    name: COOKIE_NAME,
-    value: '',
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
-    maxAge: 0,
-    path: '/',
+    userId: appUser.id,
+    email: appUser.email,
+    role: appUser.role,
+    displayName: appUser.display_name ?? appUser.email,
   };
 }

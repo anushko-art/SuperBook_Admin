@@ -9,8 +9,11 @@ interface TopicRow {
   chapter_id: string; chapter_title: string; chapter_number: number;
   textbook_id: string; textbook_title: string; subject: string;
 }
+interface Insight { title: string; content: string; summary: string; keywords: string[] }
+interface KeyPoint { point: string; importance: number; explanation: string }
+interface Formula { latex: string; explanation: string; applications: string[] }
 interface ContentRow {
-  id: string; insight: unknown; key_points: unknown; formulas: unknown;
+  id: string; insight: Insight | null; key_points: KeyPoint[] | null; formulas: Formula[] | null;
   generation_model: string; updated_at: string;
 }
 interface ProgressRow {
@@ -18,6 +21,14 @@ interface ProgressRow {
   insight_read: boolean; key_points_read: boolean; formulas_read: boolean;
   quiz_attempted: boolean; quiz_score: number; time_spent_seconds: number;
 }
+interface Flashcard { id: string; question: string; answer: string; category: string; difficulty_level: string; order_index: number }
+interface QuizOption { id: number; text: string; is_correct: boolean }
+interface QuizQuestion {
+  id: string; question_text: string; options: QuizOption[];
+  correct_answer_id: number; explanation: string; difficulty_level: string;
+}
+interface RelatedImage { id: string; file_name: string; file_path: string; alt_text: string; caption: string; image_type: string }
+interface RelatedVideo { id: string; title: string; youtube_id: string; youtube_url: string; description: string; channel_name: string; duration_seconds: number }
 
 async function getTopicData(id: string, userId?: string) {
   const [topic] = await query<TopicRow>(
@@ -38,26 +49,26 @@ async function getTopicData(id: string, userId?: string) {
     [id]
   );
 
-  let flashcards: unknown[] = [];
-  let quizQuestions: unknown[] = [];
-  let relatedImages: unknown[] = [];
-  let relatedVideos: unknown[] = [];
+  let flashcards: Flashcard[] = [];
+  let quizQuestions: QuizQuestion[] = [];
+  let relatedImages: RelatedImage[] = [];
+  let relatedVideos: RelatedVideo[] = [];
 
   if (content) {
     [flashcards, quizQuestions] = await Promise.all([
-      query(`SELECT id, question, answer, category, difficulty_level, order_index
+      query<Flashcard>(`SELECT id, question, answer, category, difficulty_level, order_index
              FROM global_generated_flashcards WHERE global_content_id = $1 ORDER BY order_index`, [content.id]),
-      query(`SELECT id, question_text, options, correct_answer_id, explanation, difficulty_level
+      query<QuizQuestion>(`SELECT id, question_text, options, correct_answer_id, explanation, difficulty_level
              FROM global_generated_quiz_questions WHERE global_content_id = $1 ORDER BY order_index`, [content.id]),
     ]);
   }
 
   // Related media
   [relatedImages, relatedVideos] = await Promise.all([
-    query(`SELECT id, file_name, file_path, alt_text, caption, image_type
+    query<RelatedImage>(`SELECT id, file_name, file_path, alt_text, caption, image_type
            FROM learning_images WHERE topic_id = $1 OR chapter_id = $2 LIMIT 6`,
       [id, topic.chapter_id]),
-    query(`SELECT id, title, youtube_id, youtube_url, description, channel_name, duration_seconds
+    query<RelatedVideo>(`SELECT id, title, youtube_id, youtube_url, description, channel_name, duration_seconds
            FROM learning_videos WHERE topic_id = $1 LIMIT 4`, [id]),
   ]);
 

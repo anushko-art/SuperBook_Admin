@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+import { storeFile } from '@/lib/storage';
 import { query } from '@/lib/db';
+
+export const runtime = 'nodejs';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -9,15 +10,15 @@ type Params = { params: Promise<{ id: string }> };
  * POST /api/admin/images/[id]/reupload
  * FormData: { file: File }
  *
- * Overwrites the physical file on disk with the same filename,
- * so all markdown references remain valid.
- * Updates updated_at in DB but keeps file_path and file_name unchanged.
+ * Overwrites the stored file with the same filename so all markdown
+ * references remain valid. Updates the file_path in DB (important for
+ * Vercel Blob where each upload gets its own URL).
  */
 export async function POST(req: Request, { params }: Params) {
   const { id } = await params;
 
-  const [img] = await query<{ chapter_id: string; file_name: string; file_path: string }>(
-    `SELECT chapter_id, file_name, file_path FROM learning_images WHERE id = $1`,
+  const [img] = await query<{ chapter_id: string; file_name: string }>(
+    `SELECT chapter_id, file_name FROM learning_images WHERE id = $1`,
     [id]
   );
   if (!img) return NextResponse.json({ error: 'Image record not found' }, { status: 404 });
@@ -32,15 +33,14 @@ export async function POST(req: Request, { params }: Params) {
   const file = formData.get('file') as File | null;
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
 
-  // Write file to disk — same path, same name (overwrites existing)
-  const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'chapters', img.chapter_id);
-  await mkdir(uploadDir, { recursive: true });
-  const destPath = path.join(uploadDir, img.file_name);
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(destPath, buffer);
+  const buffer    = Buffer.from(await file.arrayBuffer());
+  const publicPath = await storeFile(buffer, img.chapter_id, img.file_name);
 
-  // Touch updated_at so the admin can see it changed
-  await query(`UPDATE learning_images SET updated_at = NOW() WHERE id = $1`, [id]);
+  // Update file_path in case it changed (Vercel Blob URL) and touch updated_at
+  await query(
+    `UPDATE learning_images SET file_path = $1, updated_at = NOW() WHERE id = $2`,
+    [publicPath, id]
+  );
 
-  return NextResponse.json({ ok: true, file_path: img.file_path, file_name: img.file_name });
+  return NextResponse.json({ ok: true, file_path: publicPath, file_name: img.file_name });
 }

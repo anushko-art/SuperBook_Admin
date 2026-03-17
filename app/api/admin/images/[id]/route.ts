@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { unlink } from 'fs/promises';
-import path from 'path';
+import { removeFile } from '@/lib/storage';
 import { query } from '@/lib/db';
+
+export const runtime = 'nodejs';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -53,17 +54,13 @@ export async function PATCH(req: Request, { params }: Params) {
   return NextResponse.json({ ok: true });
 }
 
-/** DELETE /api/admin/images/[id] — remove file from disk and DB */
+/** DELETE /api/admin/images/[id] — remove file from storage and DB */
 export async function DELETE(_req: Request, { params }: Params) {
   const { id } = await params;
   const [img] = await query<{ file_path: string }>(`SELECT file_path FROM learning_images WHERE id = $1`, [id]);
   if (!img) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  try {
-    const absPath = path.join(process.cwd(), 'public', img.file_path);
-    await unlink(absPath);
-  } catch { /* file may already be gone */ }
-
+  await removeFile(img.file_path);
   await query(`DELETE FROM learning_images WHERE id = $1`, [id]);
   return NextResponse.json({ ok: true });
 }

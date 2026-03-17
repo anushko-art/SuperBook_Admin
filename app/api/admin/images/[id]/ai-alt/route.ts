@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-import { readFile } from 'fs/promises';
 import path from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { readFileForAI } from '@/lib/storage';
 import { query } from '@/lib/db';
+
+export const runtime = 'nodejs';
 
 const MODEL = 'gemini-2.0-flash';
 
@@ -11,12 +13,8 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * POST /api/admin/images/[id]/ai-alt
  *
- * Uses Gemini Vision to analyze the image and generate:
- * - alt_text: concise accessibility description (1 sentence)
- * - description: detailed educational context (2–4 sentences)
- * - caption: short figure caption
- *
- * Reads the image file from disk and sends as inline data to Gemini.
+ * Uses Gemini Vision to generate alt_text, description, and caption
+ * for a learning_images record. Works with both local files and Blob URLs.
  */
 export async function POST(_req: Request, { params }: Params) {
   const { id } = await params;
@@ -40,20 +38,17 @@ export async function POST(_req: Request, { params }: Params) {
   );
   if (!img) return NextResponse.json({ error: 'Image not found' }, { status: 404 });
 
-  // Read the physical file
-  const absPath = path.join(process.cwd(), 'public', img.file_path);
   let imageData: Buffer;
   try {
-    imageData = await readFile(absPath);
+    imageData = await readFileForAI(img.file_path);
   } catch {
-    return NextResponse.json({ error: 'Image file not found on disk' }, { status: 404 });
+    return NextResponse.json({ error: 'Image file not found' }, { status: 404 });
   }
 
-  // Determine MIME type from extension
-  const ext = path.extname(img.file_name).toLowerCase().slice(1);
+  const ext      = path.extname(img.file_name).toLowerCase().slice(1);
   const mimeMap: Record<string, string> = {
     jpg: 'image/jpeg', jpeg: 'image/jpeg',
-    png: 'image/png', gif: 'image/gif',
+    png: 'image/png',  gif: 'image/gif',
     webp: 'image/webp', svg: 'image/svg+xml',
   };
   const mimeType = mimeMap[ext] ?? 'image/jpeg';
@@ -63,7 +58,7 @@ export async function POST(_req: Request, { params }: Params) {
     const model = genAI.getGenerativeModel({ model: MODEL });
 
     const context = [
-      img.subject ? `Subject: ${img.subject}` : '',
+      img.subject    ? `Subject: ${img.subject}`       : '',
       img.topic_title ? `Topic: ${img.topic_title}` : '',
     ].filter(Boolean).join('. ');
 
@@ -72,29 +67,22 @@ ${context ? `Context: ${context}.` : ''}
 
 Analyze this image and respond with ONLY a valid JSON object:
 {
-  "alt_text": "Concise one-sentence accessibility description of the image.",
-  "description": "2-4 sentence educational explanation of what the image shows and its significance.",
+  "alt_text": "Concise one-sentence accessibility description.",
+  "description": "2-4 sentence educational explanation of what the image shows.",
   "caption": "Short figure caption (under 15 words)."
 }
 
 No markdown fences. No extra text.`;
 
     const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType,
-          data: imageData.toString('base64'),
-        },
-      },
+      { inlineData: { mimeType, data: imageData.toString('base64') } },
       prompt,
     ]);
 
-    const raw = result.response.text().trim();
+    const raw   = result.response.text().trim();
     const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
     const generated = JSON.parse(clean) as {
-      alt_text: string;
-      description: string;
-      caption: string;
+      alt_text: string; description: string; caption: string;
     };
 
     return NextResponse.json({ ok: true, ...generated });

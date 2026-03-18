@@ -2,14 +2,17 @@
  * Storage abstraction
  * ─────────────────────────────────────────────────────────────────────────────
  * Local  (default)  → writes/reads from  public/uploads/
- * Vercel deployment → uses @vercel/blob (requires BLOB_READ_WRITE_TOKEN env var)
+ * Vercel deployment → uses Supabase Storage (requires SUPABASE_SERVICE_ROLE_KEY)
  *
  * The returned `filePath` is always a public URL:
  *   Local:  /uploads/chapters/<chapterId>/<filename>
- *   Vercel: https://<store>.public.blob.vercel-storage.com/chapters/<id>/<file>
+ *   Vercel: https://<project>.supabase.co/storage/v1/object/public/chapter-images/...
  */
 
 const IS_VERCEL = process.env.VERCEL === '1';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+const BUCKET = 'chapter-images';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 const MIME: Record<string, string> = {
@@ -23,24 +26,33 @@ function mimeFromName(filename: string): string {
   return MIME[ext] ?? 'application/octet-stream';
 }
 
+// ── Supabase storage client (server-side only) ─────────────────────────────
+async function getStorageClient() {
+  const { createClient } = await import('@supabase/supabase-js');
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+}
+
 // ── storeFile ─────────────────────────────────────────────────────────────────
-/**
- * Save a file buffer and return its public URL / path.
- */
 export async function storeFile(
   buffer: Buffer,
   chapterId: string,
   filename: string,
 ): Promise<string> {
   if (IS_VERCEL) {
-    const { put } = await import('@vercel/blob');
-    const blob = await put(`chapters/${chapterId}/${filename}`, buffer, {
-      access: 'public',
-      contentType: mimeFromName(filename),
-      // Overwrite if same path already exists
-      allowOverwrite: true,
-    } as Parameters<typeof put>[2]);
-    return blob.url;
+    const supabase = await getStorageClient();
+    const storagePath = `chapters/${chapterId}/${filename}`;
+
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, buffer, {
+        contentType: mimeFromName(filename),
+        upsert: true,
+      });
+
+    if (error) throw new Error(`Supabase Storage upload failed: ${error.message}`);
+
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+    return data.publicUrl;
   }
 
   // Local filesystem
@@ -53,13 +65,16 @@ export async function storeFile(
 }
 
 // ── removeFile ────────────────────────────────────────────────────────────────
-/**
- * Delete a file given its public URL / path (as stored in learning_images.file_path).
- */
 export async function removeFile(filePath: string): Promise<void> {
-  if (filePath.startsWith('http')) {
-    const { del } = await import('@vercel/blob');
-    await del(filePath);
+  if (filePath.startsWith('http') && filePath.includes('supabase')) {
+    // Extract path after /object/public/<bucket>/
+    const match = filePath.match(/\/object\/public\/[^/]+\/(.+)$/);
+    if (match) {
+      const supabase = await getStorageClient();
+      await supabase.storage.from(BUCKET).remove([match[1]]);
+    }
+  } else if (filePath.startsWith('http')) {
+    // Legacy Vercel Blob or other remote — skip silently
   } else {
     const { unlink } = await import('fs/promises');
     const path = await import('path');
@@ -68,10 +83,6 @@ export async function removeFile(filePath: string): Promise<void> {
 }
 
 // ── readFileForAI ─────────────────────────────────────────────────────────────
-/**
- * Read a stored image into a Buffer (for Gemini Vision).
- * Works for both local paths and remote URLs.
- */
 export async function readFileForAI(filePath: string): Promise<Buffer> {
   if (filePath.startsWith('http')) {
     const res = await fetch(filePath);
@@ -84,18 +95,9 @@ export async function readFileForAI(filePath: string): Promise<Buffer> {
 }
 
 // ── imageBaseUrl ──────────────────────────────────────────────────────────────
-/**
- * Returns the base URL prefix used by MarkdownRenderer to resolve bare
- * image filenames (e.g. "img_foo.jpeg") found in source_markdown.
- *
- * Local:  /uploads/chapters/<chapterId>/
- * Vercel: https://<store>.public.blob.vercel-storage.com/chapters/<chapterId>/
- *         (requires NEXT_PUBLIC_BLOB_BASE_URL env var)
- */
 export function imageBaseUrl(chapterId: string): string {
-  if (IS_VERCEL && process.env.NEXT_PUBLIC_BLOB_BASE_URL) {
-    const base = process.env.NEXT_PUBLIC_BLOB_BASE_URL.replace(/\/$/, '');
-    return `${base}/chapters/${chapterId}/`;
+  if (IS_VERCEL && SUPABASE_URL) {
+    return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/chapters/${chapterId}/`;
   }
   return `/uploads/chapters/${chapterId}/`;
 }

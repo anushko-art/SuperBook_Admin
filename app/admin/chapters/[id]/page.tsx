@@ -35,27 +35,38 @@ interface CombinedImage {
 }
 
 async function getChapter(id: string) {
+  // Critical query — if this fails the chapter page is genuinely unavailable.
+  let chapter: Chapter | undefined;
   try {
-    const [chapter] = await query<Chapter>(
+    [chapter] = await query<Chapter>(
       `SELECT c.*, t.title AS textbook_title, t.subject, t.grade, t.part, t.id AS textbook_id
        FROM chapters c
        JOIN textbooks t ON c.textbook_id = t.id
        WHERE c.id = $1`,
       [id]
     );
-    if (!chapter) return null;
+  } catch (err) {
+    console.error('[getChapter] chapter query failed:', err);
+    return null;
+  }
+  if (!chapter) return null;
 
-    /* Legacy chapter_images */
-    const legacyImages = await query<CombinedImage>(
+  // Optional: legacy table — may not exist in all deployments.
+  let legacyImages: CombinedImage[] = [];
+  try {
+    legacyImages = await query<CombinedImage>(
       `SELECT id, filename, alt_text, page_number, NULL AS file_path, NULL AS topic_title,
               'chapter_images' AS source
        FROM chapter_images WHERE chapter_id = $1
        ORDER BY page_number NULLS LAST, filename`,
       [id]
     );
+  } catch { /* table not created yet — safe to skip */ }
 
-    /* New learning_images (uploaded via new pipeline) */
-    const learningImages = await query<CombinedImage>(
+  // Optional: new learning_images pipeline — table created by migration.
+  let learningImages: CombinedImage[] = [];
+  try {
+    learningImages = await query<CombinedImage>(
       `SELECT li.id, li.file_name AS filename, li.alt_text, NULL AS page_number,
               li.file_path, t.title AS topic_title, 'learning_images' AS source
        FROM learning_images li
@@ -64,10 +75,12 @@ async function getChapter(id: string) {
        ORDER BY li.created_at DESC`,
       [id]
     );
+  } catch { /* table not created yet — safe to skip */ }
 
-    const images = [...legacyImages, ...learningImages];
-
-    const topics = await query<Topic>(
+  // Optional: topics with generated-content counts — tables created by migration.
+  let topics: Topic[] = [];
+  try {
+    topics = await query<Topic>(
       `SELECT t.id, t.title, t.order_index, t.source_markdown,
               t.difficulty_level, t.is_key_concept, t.is_formula,
               gc.id AS content_id,
@@ -80,11 +93,9 @@ async function getChapter(id: string) {
        ORDER BY t.order_index`,
       [id]
     );
+  } catch { /* tables not created yet — safe to skip */ }
 
-    return { chapter, images, topics };
-  } catch {
-    return null;
-  }
+  return { chapter, images: [...legacyImages, ...learningImages], topics };
 }
 
 export default async function AdminChapterDetailPage({

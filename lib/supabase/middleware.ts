@@ -34,29 +34,35 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Refresh the auth token
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Refresh the auth token — wrapped in try/catch to prevent
+  // MIDDLEWARE_INVOCATION_FAILED on Vercel if the Supabase API is unreachable.
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  // Protect dashboard routes
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/auth/signin';
-    url.searchParams.set('from', request.nextUrl.pathname);
-    return NextResponse.redirect(url);
-  }
+    // Protect dashboard routes
+    if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/auth/signin';
+      url.searchParams.set('from', request.nextUrl.pathname);
+      return NextResponse.redirect(url);
+    }
 
-  // Redirect authenticated users away from auth pages
-  if (
-    user &&
-    (request.nextUrl.pathname.startsWith('/auth/signin') ||
-      request.nextUrl.pathname.startsWith('/auth/signup'))
-  ) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
-    url.search = '';
-    return NextResponse.redirect(url);
+    // Redirect authenticated users away from auth pages
+    if (
+      user &&
+      (request.nextUrl.pathname.startsWith('/auth/signin') ||
+        request.nextUrl.pathname.startsWith('/auth/signup'))
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      url.search = '';
+      return NextResponse.redirect(url);
+    }
+  } catch {
+    // On auth error (network timeout, invalid token, etc.), pass through
+    // without redirecting rather than crashing the middleware.
   }
 
   return supabaseResponse;

@@ -13,6 +13,11 @@ export async function POST() {
     await query(`UPDATE uploaded_files SET meta_json = '{}' WHERE meta_json IS NULL`);
     results.push('uploaded_files.meta_json: ok');
 
+    // ── Users table extras ───────────────────────────────────────────────────
+    await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30)`);
+    await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`);
+    results.push('users extras: ok');
+
     // ── Phase 1: pgvector (optional — skip silently if unavailable) ─────────
     try {
       await query(`CREATE EXTENSION IF NOT EXISTS vector`);

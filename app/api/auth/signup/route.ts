@@ -28,6 +28,7 @@ export async function POST(req: Request) {
   const supabase = await createClient();
 
   // Create user in Supabase Auth
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
   const { data, error } = await supabase.auth.signUp({
     email: email.toLowerCase().trim(),
     password,
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
       data: {
         display_name: display_name?.trim() || null,
       },
+      ...(appUrl ? { emailRedirectTo: `${appUrl}/auth/callback` } : {}),
     },
   });
 

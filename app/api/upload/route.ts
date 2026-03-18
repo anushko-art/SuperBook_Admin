@@ -36,8 +36,8 @@ export async function POST(req: Request) {
     const [uploaded] = await query<{ id: string }>(
       `INSERT INTO uploaded_files
          (original_filename, stored_filename, file_path, file_size_bytes, mime_type,
-          file_type, linked_textbook_id, linked_chapter_id, status, uploader_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'uploaded',$9)
+          file_type, linked_textbook_id, linked_chapter_id, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'uploaded')
        RETURNING id`,
       [
         file.name,
@@ -48,9 +48,15 @@ export async function POST(req: Request) {
         fileType,
         textbookId || null,
         chapterId || null,
-        uploaderId,
       ]
     );
+
+    // Best-effort: record uploader (column may not exist yet pre-migration)
+    if (uploaderId) {
+      try {
+        await query(`UPDATE uploaded_files SET uploader_id = $1 WHERE id = $2`, [uploaderId, uploaded.id]);
+      } catch { /* column not yet migrated — safe to skip */ }
+    }
 
     // If it's a markdown file and a chapter is linked, update chapter content
     if (fileType === 'markdown' && chapterId) {

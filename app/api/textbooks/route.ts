@@ -45,11 +45,19 @@ export async function POST(req: Request) {
     const uploaderId = session?.userId || null;
 
     const [textbook] = await query<{ id: string }>(
-      `INSERT INTO textbooks (title, description, subject, grade, part, publisher, slug, uploader_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO textbooks (title, description, subject, grade, part, publisher, slug)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        RETURNING id`,
-      [title, description, subject, grade, part, publisher, slug || null, uploaderId]
+      [title, description, subject, grade, part, publisher, slug || null]
     );
+
+    // Best-effort: record who created this textbook (column may not exist yet)
+    if (uploaderId) {
+      try {
+        await query(`UPDATE textbooks SET uploader_id = $1 WHERE id = $2`, [uploaderId, textbook.id]);
+      } catch { /* column not yet migrated — safe to skip */ }
+    }
+
     return NextResponse.json({ textbook }, { status: 201 });
   } catch (err) {
     console.error('POST /api/textbooks error:', err);

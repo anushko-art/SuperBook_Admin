@@ -14,16 +14,19 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [user] = await query<{
-    id: string;
-    email: string;
-    display_name: string | null;
-    role: string;
-    phone: string | null;
-  }>(
-    `SELECT id, email, display_name, role, phone FROM users WHERE id = $1`,
-    [session.userId]
-  );
+  // Try with phone column first; fall back if column doesn't exist yet
+  let user: { id: string; email: string; display_name: string | null; role: string; phone?: string | null } | undefined;
+  try {
+    [user] = await query<{ id: string; email: string; display_name: string | null; role: string; phone: string | null }>(
+      `SELECT id, email, display_name, role, phone FROM users WHERE id = $1`,
+      [session.userId]
+    );
+  } catch {
+    [user] = await query<{ id: string; email: string; display_name: string | null; role: string }>(
+      `SELECT id, email, display_name, role FROM users WHERE id = $1`,
+      [session.userId]
+    );
+  }
 
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -73,10 +76,28 @@ export async function PATCH(req: Request) {
   }
 
   values.push(session.userId);
-  await query(
-    `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`,
-    values
-  );
+  try {
+    await query(
+      `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`,
+      values
+    );
+  } catch {
+    // updated_at or phone column may not exist yet — retry with only display_name
+    const safeUpdates: string[] = [];
+    const safeValues: unknown[] = [];
+    let safeIdx = 1;
+    if (typeof body.display_name === 'string') {
+      safeUpdates.push(`display_name = $${safeIdx++}`);
+      safeValues.push(body.display_name.trim() || null);
+    }
+    if (safeUpdates.length > 0) {
+      safeValues.push(session.userId);
+      await query(
+        `UPDATE users SET ${safeUpdates.join(', ')} WHERE id = $${safeIdx}`,
+        safeValues
+      );
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

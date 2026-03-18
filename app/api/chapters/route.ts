@@ -22,15 +22,22 @@ export async function POST(req: Request) {
     const [chapter] = await query<{ id: string }>(
       `INSERT INTO chapters
          (textbook_id, title, chapter_number, display_order, content_markdown,
-          content_length, estimated_read_time_minutes, source_folder, is_published, uploader_id)
-       VALUES ($1,$2,$3,$3,$4,$5,$6,$7,false,$8)
+          content_length, estimated_read_time_minutes, source_folder, is_published)
+       VALUES ($1,$2,$3,$3,$4,$5,$6,$7,false)
        ON CONFLICT (textbook_id, chapter_number) DO UPDATE
          SET title = EXCLUDED.title,
              content_markdown = COALESCE(EXCLUDED.content_markdown, chapters.content_markdown),
              updated_at = NOW()
        RETURNING id`,
-      [textbook_id, title, chapter_number, content_markdown ?? null, contentLength, readTime, source_folder ?? null, uploaderId]
+      [textbook_id, title, chapter_number, content_markdown ?? null, contentLength, readTime, source_folder ?? null]
     );
+
+    // Best-effort: record who created this chapter (column may not exist yet)
+    if (uploaderId) {
+      try {
+        await query(`UPDATE chapters SET uploader_id = $1 WHERE id = $2`, [uploaderId, chapter.id]);
+      } catch { /* column not yet migrated — safe to skip */ }
+    }
     return NextResponse.json({ chapter }, { status: 201 });
   } catch (err) {
     console.error('POST /api/chapters error:', err);

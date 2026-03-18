@@ -48,13 +48,24 @@ export function SidebarProvider({
 }
 
 export function Sidebar({ className, children }: { className?: string; children: React.ReactNode }) {
-  const { open, isMobile } = useSidebar();
+  const { open, isMobile, setOpen } = useSidebar();
 
   if (isMobile) {
     return (
-      <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-14 items-center justify-around border-t border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 md:hidden">
-        {children}
-      </nav>
+      <>
+        {open && (
+           <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setOpen(false)} />
+        )}
+        <aside
+          className={cn(
+            'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[hsl(var(--border))] bg-[hsl(var(--card))] transition-transform duration-300',
+            open ? 'translate-x-0 w-64' : '-translate-x-full w-64',
+            className
+          )}
+        >
+          {children}
+        </aside>
+      </>
     );
   }
 

@@ -1,13 +1,10 @@
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+import { storeFile } from '@/lib/storage';
 import { query } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 
-// Directory to store uploaded files
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 
 export async function POST(req: Request) {
   try {
@@ -24,9 +21,6 @@ export async function POST(req: Request) {
     const session = await getSession();
     const uploaderId = session?.userId || null;
 
-    // Ensure upload directory exists
-    await mkdir(UPLOAD_DIR, { recursive: true });
-
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
@@ -34,9 +28,9 @@ export async function POST(req: Request) {
     const timestamp = Date.now();
     const originalName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storedFilename = `${timestamp}_${originalName}`;
-    const filePath = path.join(UPLOAD_DIR, storedFilename);
-
-    await writeFile(filePath, buffer);
+    
+    // Use storage abstraction instead of local fs path
+    const publicUrl = await storeFile(buffer, chapterId || 'unassigned', storedFilename);
 
     // Record in DB
     const [uploaded] = await query<{ id: string }>(
@@ -48,7 +42,7 @@ export async function POST(req: Request) {
       [
         file.name,
         storedFilename,
-        `/uploads/${storedFilename}`,
+        publicUrl,
         file.size,
         file.type || 'application/octet-stream',
         fileType,
@@ -80,7 +74,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       id: uploaded.id,
       filename: storedFilename,
-      path: `/uploads/${storedFilename}`,
+      path: publicUrl,
       size: file.size,
       status: fileType === 'markdown' && chapterId ? 'ingested' : 'uploaded',
     }, { status: 201 });

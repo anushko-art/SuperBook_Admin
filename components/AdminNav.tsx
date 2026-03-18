@@ -14,6 +14,7 @@ import {
   Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle,
   SheetDescription, SheetBody, SheetFooter,
 } from '@/components/ui/sheet';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import {
   Breadcrumb, BreadcrumbList, BreadcrumbItem,
   BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage,
@@ -130,9 +131,18 @@ export function AdminNav({ breadcrumbs = [] }: AdminNavProps) {
   };
 
   return (
-    <header className="h-14 flex items-center gap-4 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] px-6 shrink-0">
+    <header className="h-14 flex items-center gap-4 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 md:px-6 shrink-0">
+      
+      {/* Mobile: Hamburger & Logo */}
+      <div className="flex md:hidden items-center gap-3">
+        <SidebarTrigger />
+        <div className="h-7 w-7 rounded-md bg-[hsl(var(--primary))] flex items-center justify-center shrink-0">
+          <BookOpen className="h-3.5 w-3.5 text-[hsl(var(--primary-foreground))]" />
+        </div>
+      </div>
+
       {/* Breadcrumb */}
-      <div className="flex-1 min-w-0">
+      <div className="hidden md:flex flex-1 min-w-0">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -170,7 +180,7 @@ export function AdminNav({ breadcrumbs = [] }: AdminNavProps) {
             variant="ghost"
             size="icon"
             onClick={toggleMode}
-            className="h-8 w-8 rounded-full"
+            className="h-8 w-8 rounded-full hidden md:flex"
             title={mode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
           >
             {mode === 'light'
@@ -181,7 +191,7 @@ export function AdminNav({ breadcrumbs = [] }: AdminNavProps) {
           {/* Notifications */}
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full relative">
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full relative hidden md:flex">
                 <Bell className="h-4 w-4 text-[hsl(var(--muted-foreground))]" />
                 {notifCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-[10px] font-bold flex items-center justify-center">

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { ThemeWrapper } from '@/components/theme-provider';
 import { AdminNav } from '@/components/AdminNav';
+import { MobileSidebarActions } from '@/components/MobileSidebarActions';
 import { Toaster } from '@/components/ui/sonner';
 import {
   Sidebar, SidebarProvider, SidebarHeader, SidebarContent,
@@ -82,6 +83,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     icon={<Settings className="h-4 w-4" />}
                   />
                 </SidebarMenuItem>
+                <MobileSidebarActions />
               </SidebarMenu>
             </SidebarFooter>
           </Sidebar>

@@ -18,6 +18,12 @@ export async function POST() {
     await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`);
     results.push('users extras: ok');
 
+    // ── uploader_id columns (data permissions) ───────────────────────────────
+    await query(`ALTER TABLE textbooks ADD COLUMN IF NOT EXISTS uploader_id UUID REFERENCES users(id) ON DELETE SET NULL`);
+    await query(`ALTER TABLE chapters ADD COLUMN IF NOT EXISTS uploader_id UUID REFERENCES users(id) ON DELETE SET NULL`);
+    await query(`ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS uploader_id UUID REFERENCES users(id) ON DELETE SET NULL`);
+    results.push('uploader_id columns: ok');
+
     // ── Phase 1: pgvector (optional — skip silently if unavailable) ─────────
     try {
       await query(`CREATE EXTENSION IF NOT EXISTS vector`);

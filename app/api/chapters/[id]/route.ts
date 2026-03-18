@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 export async function GET(
   _req: Request,
@@ -42,7 +43,23 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
+    // Check ownership — allow admin or original uploader
+    const [row] = await query<{ uploader_id: string | null }>(
+      `SELECT uploader_id FROM chapters WHERE id = $1`,
+      [id]
+    );
+    if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    if (session.role !== 'admin' && row.uploader_id !== session.userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await req.json();
     const { title, is_published } = body;
 

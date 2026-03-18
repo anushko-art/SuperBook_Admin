@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 interface MetaBody {
   doc_type?: string;
@@ -19,6 +20,22 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Check ownership — allow admin or original uploader
+  const [uploadRow] = await query<{ uploader_id: string | null }>(
+    `SELECT uploader_id FROM uploaded_files WHERE id = $1`,
+    [id]
+  );
+  if (!uploadRow) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  if (session.role !== 'admin' && uploadRow.uploader_id !== session.userId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body: MetaBody = await req.json();
     const { doc_type, subject, class_level, source, chapter_no, chapter_name, status, map_chapter } = body;

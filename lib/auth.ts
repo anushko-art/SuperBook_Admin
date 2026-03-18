@@ -40,8 +40,34 @@ export async function getSession(): Promise<SessionPayload | null> {
 
   if (!appUser) {
     // Auth user exists but no matching row in the users table yet.
-    // This can happen for brand-new signups — the signup handler
-    // creates the row, but if it's somehow missing, return null.
+    // This happens for OAuth sign-ins (Google, GitHub) that bypass the
+    // signup route. Auto-provision the row so the app works immediately.
+    const email = user.email ?? '';
+    const displayName =
+      (user.user_metadata?.full_name as string | undefined) ??
+      (user.user_metadata?.name as string | undefined) ??
+      email;
+    try {
+      await query(
+        `INSERT INTO users (id, email, display_name, role, created_at)
+         VALUES ($1, $2, $3, 'admin', NOW())
+         ON CONFLICT (id) DO NOTHING`,
+        [user.id, email, displayName]
+      );
+      const [provisioned] = await query<{
+        id: string; email: string; display_name: string; role: string;
+      }>(`SELECT id, email, display_name, role FROM users WHERE id = $1`, [user.id]);
+      if (provisioned) {
+        return {
+          userId: provisioned.id,
+          email: provisioned.email,
+          role: provisioned.role,
+          displayName: provisioned.display_name ?? email,
+        };
+      }
+    } catch {
+      // DB not yet set up — return a minimal session so the page renders
+    }
     return null;
   }
 

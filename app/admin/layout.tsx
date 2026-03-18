@@ -18,8 +18,8 @@ const navGroups = [
     items: [
       { href: '/admin', label: 'Overview', icon: LayoutDashboard },
       { href: '/admin/content', label: 'Manage Content', icon: Table2 },
-      { href: '/admin/textbooks', label: 'Textbooks', icon: Library },
-      { href: '/admin/chapters', label: 'Chapters', icon: BookOpen },
+      { href: '/admin/textbooks', label: 'Ingest Content', icon: Library },
+      { href: '/admin/chapters', label: 'Preview Chapter', icon: BookOpen },
       { href: '/admin/generate', label: 'AI Generate', icon: Sparkles },
       { href: '/admin/media', label: 'Media', icon: ImageIcon },
     ],

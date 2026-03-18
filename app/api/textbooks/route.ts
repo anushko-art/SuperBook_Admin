@@ -48,7 +48,15 @@ export async function POST(req: Request) {
       `INSERT INTO textbooks (title, description, subject, grade, part, publisher, slug)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        RETURNING id`,
-      [title, description, subject, grade, part, publisher, slug || null]
+      [
+        title || null,
+        description || null,
+        subject || null,
+        grade || null,
+        part || null,
+        publisher || null,
+        slug || null
+      ]
     );
 
     // Best-effort: record who created this textbook (column may not exist yet)

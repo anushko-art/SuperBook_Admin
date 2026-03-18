@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { query } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 // Directory to store uploaded files
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
@@ -19,6 +20,9 @@ export async function POST(req: Request) {
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
+
+    const session = await getSession();
+    const uploaderId = session?.userId || null;
 
     // Ensure upload directory exists
     await mkdir(UPLOAD_DIR, { recursive: true });
@@ -38,8 +42,8 @@ export async function POST(req: Request) {
     const [uploaded] = await query<{ id: string }>(
       `INSERT INTO uploaded_files
          (original_filename, stored_filename, file_path, file_size_bytes, mime_type,
-          file_type, linked_textbook_id, linked_chapter_id, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'uploaded')
+          file_type, linked_textbook_id, linked_chapter_id, status, uploader_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'uploaded',$9)
        RETURNING id`,
       [
         file.name,
@@ -50,6 +54,7 @@ export async function POST(req: Request) {
         fileType,
         textbookId || null,
         chapterId || null,
+        uploaderId,
       ]
     );
 

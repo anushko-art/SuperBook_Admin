@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 export async function POST(req: Request) {
   try {
@@ -13,19 +14,22 @@ export async function POST(req: Request) {
     if (!textbook_id || !title || !chapter_number) {
       return NextResponse.json({ error: 'textbook_id, title, chapter_number required' }, { status: 400 });
     }
+
+    const session = await getSession();
+    const uploaderId = session?.userId || null;
     const contentLength = content_markdown?.length ?? 0;
     const readTime = Math.max(1, Math.round(contentLength / 1500));
     const [chapter] = await query<{ id: string }>(
       `INSERT INTO chapters
          (textbook_id, title, chapter_number, display_order, content_markdown,
-          content_length, estimated_read_time_minutes, source_folder, is_published)
-       VALUES ($1,$2,$3,$3,$4,$5,$6,$7,false)
+          content_length, estimated_read_time_minutes, source_folder, is_published, uploader_id)
+       VALUES ($1,$2,$3,$3,$4,$5,$6,$7,false,$8)
        ON CONFLICT (textbook_id, chapter_number) DO UPDATE
          SET title = EXCLUDED.title,
              content_markdown = COALESCE(EXCLUDED.content_markdown, chapters.content_markdown),
              updated_at = NOW()
        RETURNING id`,
-      [textbook_id, title, chapter_number, content_markdown ?? null, contentLength, readTime, source_folder ?? null]
+      [textbook_id, title, chapter_number, content_markdown ?? null, contentLength, readTime, source_folder ?? null, uploaderId]
     );
     return NextResponse.json({ chapter }, { status: 201 });
   } catch (err) {

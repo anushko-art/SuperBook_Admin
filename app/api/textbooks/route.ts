@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 export async function GET() {
   try {
@@ -40,11 +41,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'title and subject are required' }, { status: 400 });
     }
 
+    const session = await getSession();
+    const uploaderId = session?.userId || null;
+
     const [textbook] = await query<{ id: string }>(
-      `INSERT INTO textbooks (title, description, subject, grade, part, publisher, slug)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO textbooks (title, description, subject, grade, part, publisher, slug, uploader_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING id`,
-      [title, description, subject, grade, part, publisher, slug || null]
+      [title, description, subject, grade, part, publisher, slug || null, uploaderId]
     );
     return NextResponse.json({ textbook }, { status: 201 });
   } catch (err) {

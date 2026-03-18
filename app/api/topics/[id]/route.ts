@@ -59,12 +59,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  const { difficulty_level, is_key_concept, is_formula, title, source_markdown } = body as {
+  const { difficulty_level, is_key_concept, is_formula, title, source_markdown, order_index } = body as {
     difficulty_level?: string;
     is_key_concept?: boolean;
     is_formula?: boolean;
     title?: string;
     source_markdown?: string;
+    order_index?: number;
   };
 
   try {
@@ -77,6 +78,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (is_formula !== undefined)      { sets.push(`is_formula = $${idx++}`);      vals.push(is_formula); }
     if (title !== undefined)           { sets.push(`title = $${idx++}`);           vals.push(title); }
     if (source_markdown !== undefined) { sets.push(`source_markdown = $${idx++}`); vals.push(source_markdown); }
+    if (order_index !== undefined)     { sets.push(`order_index = $${idx++}`);     vals.push(order_index); }
 
     if (sets.length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
@@ -89,6 +91,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('PATCH /api/topics/[id] error:', err);
+    return NextResponse.json({ error: 'Database error' }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try {
+    await query(`DELETE FROM topics WHERE id = $1`, [id]);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /api/topics/[id] error:', err);
     return NextResponse.json({ error: 'Database error' }, { status: 500 });
   }
 }

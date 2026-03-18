@@ -41,8 +41,11 @@ export async function updateSession(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    // Protect dashboard routes
-    if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+    // Protect dashboard and admin routes
+    const isProtected =
+      request.nextUrl.pathname.startsWith('/dashboard') ||
+      request.nextUrl.pathname.startsWith('/admin');
+    if (!user && isProtected) {
       const url = request.nextUrl.clone();
       url.pathname = '/auth/signin';
       url.searchParams.set('from', request.nextUrl.pathname);

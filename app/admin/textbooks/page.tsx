@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   BookOpen, ChevronRight, Upload, Plus, FileText,
   ImageIcon, CheckCircle2, Clock, Loader2, RefreshCw, X, HelpCircle,
+  Trash2, ChevronUp, ChevronDown, Pencil, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -414,6 +415,12 @@ export default function AdminTextbooksPage() {
   const [editTopicDialog, setEditTopicDialog]   = useState<Topic | null>(null);
   const [loadingTopics, setLoadingTopics]       = useState(false);
 
+  /* topic inline editing */
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle]     = useState('');
+  const [deletingTopicId, setDeletingTopicId] = useState<string | null>(null);
+  const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
+
   /* bulk image upload */
   const [uploadFiles, setUploadFiles]     = useState<File[]>([]);
   const [uploading, setUploading]         = useState(false);
@@ -476,6 +483,64 @@ export default function AdminTextbooksPage() {
 
   const activeChapter = chapters.find(c => c.id === selectedChapter) ?? null;
   const activeBook    = textbooks.find(t => t.id === selectedTextbook) ?? null;
+
+  /* topic: save inline title edit */
+  const saveTopicTitle = async (id: string) => {
+    const trimmed = editingTitle.trim();
+    if (!trimmed) { setEditingTitleId(null); return; }
+    try {
+      const res = await fetch(`/api/topics/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setTopics(prev => prev.map(t => t.id === id ? { ...t, title: trimmed } : t));
+    } catch (err) { toast.error('Save failed: ' + (err instanceof Error ? err.message : String(err))); }
+    setEditingTitleId(null);
+  };
+
+  /* topic: reorder */
+  const moveTopic = async (id: string, direction: 'up' | 'down') => {
+    const idx = topics.findIndex(t => t.id === id);
+    if (idx < 0) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= topics.length) return;
+    const a = topics[idx];
+    const b = topics[swapIdx];
+    // Optimistic UI update
+    const reordered = [...topics];
+    reordered[idx] = { ...a, order_index: b.order_index };
+    reordered[swapIdx] = { ...b, order_index: a.order_index };
+    reordered.sort((x, y) => x.order_index - y.order_index);
+    setTopics(reordered);
+    // Persist both
+    await Promise.all([
+      fetch(`/api/topics/${a.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_index: b.order_index }) }),
+      fetch(`/api/topics/${b.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_index: a.order_index }) }),
+    ]);
+  };
+
+  /* topic: delete */
+  const deleteTopic = async (id: string) => {
+    try {
+      const res = await fetch(`/api/topics/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setTopics(prev => prev.filter(t => t.id !== id));
+      toast.success('Topic deleted');
+    } catch (err) { toast.error('Delete failed: ' + (err instanceof Error ? err.message : String(err))); }
+    setDeletingTopicId(null);
+  };
+
+  /* image: delete */
+  const deleteImage = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/images/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setIndexedImages(prev => prev.filter(img => img.id !== id));
+      toast.success('Image deleted');
+    } catch (err) { toast.error('Delete failed: ' + (err instanceof Error ? err.message : String(err))); }
+    setDeletingImageId(null);
+  };
 
   /* bulk image upload */
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -677,38 +742,84 @@ export default function AdminTextbooksPage() {
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto divide-y divide-[hsl(var(--border))]">
-                  {topics.map(t => (
-                    <div key={t.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-[hsl(var(--accent)/0.5)] group">
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))] w-5 shrink-0 text-right font-mono">
-                        {t.order_index + 1}.
-                      </span>
+                  {topics.map((t, i) => (
+                    <div key={t.id} className="flex items-center gap-1.5 px-2 py-2 hover:bg-[hsl(var(--accent)/0.5)] group">
+                      {/* Reorder arrows */}
+                      <div className="flex flex-col shrink-0">
+                        <button onClick={() => moveTopic(t.id, 'up')} disabled={i === 0}
+                          className="h-4 w-4 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] disabled:opacity-20 transition-colors">
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button onClick={() => moveTopic(t.id, 'down')} disabled={i === topics.length - 1}
+                          className="h-4 w-4 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] disabled:opacity-20 transition-colors">
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </div>
+
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))] w-4 shrink-0 text-right font-mono">{i + 1}.</span>
+
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium leading-snug truncate">{t.title}</p>
+                        {editingTitleId === t.id ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              autoFocus
+                              value={editingTitle}
+                              onChange={e => setEditingTitle(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') saveTopicTitle(t.id); if (e.key === 'Escape') setEditingTitleId(null); }}
+                              className="flex-1 text-xs border border-[hsl(var(--border))] rounded px-1.5 py-0.5 bg-[hsl(var(--background))] min-w-0"
+                            />
+                            <button onClick={() => saveTopicTitle(t.id)} className="h-5 w-5 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 rounded">
+                              <Check className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-xs font-medium leading-snug truncate">{t.title}</p>
+                        )}
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          {t.content_id ? (
-                            <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600">
-                              <CheckCircle2 className="h-2.5 w-2.5" />AI Ready
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-0.5 text-[9px] text-[hsl(var(--muted-foreground))]">
-                              <Clock className="h-2.5 w-2.5" />Pending
-                            </span>
-                          )}
+                          {t.content_id
+                            ? <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600"><CheckCircle2 className="h-2.5 w-2.5" />AI Ready</span>
+                            : <span className="inline-flex items-center gap-0.5 text-[9px] text-[hsl(var(--muted-foreground))]"><Clock className="h-2.5 w-2.5" />Pending</span>
+                          }
                           {t.source_markdown && (
-                            <span className="text-[9px] text-blue-500">
-                              md · {extractImageRefs(t.source_markdown).length} img
-                            </span>
+                            <span className="text-[9px] text-blue-500">md · {extractImageRefs(t.source_markdown).length} img</span>
                           )}
                         </div>
                       </div>
-                      {/* Edit markdown button */}
-                      <button
-                        onClick={() => setEditTopicDialog(t)}
-                        className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)] transition-colors opacity-0 group-hover:opacity-100"
-                        title="Edit markdown content"
-                      >
-                        <Upload className="h-3 w-3" />
-                      </button>
+
+                      {/* Action buttons (visible on hover) */}
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        {/* Rename */}
+                        <button onClick={() => { setEditingTitleId(t.id); setEditingTitle(t.title); }}
+                          className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)] transition-colors"
+                          title="Rename topic">
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        {/* Edit markdown */}
+                        <button onClick={() => setEditTopicDialog(t)}
+                          className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)] transition-colors"
+                          title="Edit markdown content">
+                          <Upload className="h-3 w-3" />
+                        </button>
+                        {/* Delete */}
+                        {deletingTopicId === t.id ? (
+                          <div className="flex items-center gap-0.5">
+                            <button onClick={() => deleteTopic(t.id)}
+                              className="h-6 px-1.5 rounded text-[9px] font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors">
+                              Delete
+                            </button>
+                            <button onClick={() => setDeletingTopicId(null)}
+                              className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] transition-colors">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setDeletingTopicId(t.id)}
+                            className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-50 transition-colors"
+                            title="Delete topic">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -838,9 +949,27 @@ export default function AdminTextbooksPage() {
                       </div>
                       <div className="max-h-36 overflow-y-auto space-y-0.5">
                         {indexedImages.map(img => (
-                          <div key={img.id} className="flex items-center gap-1.5">
+                          <div key={img.id} className="flex items-center gap-1.5 group">
                             <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-                            <span className="text-[10px] font-mono truncate text-[hsl(var(--muted-foreground))]">{img.file_name}</span>
+                            <span className="text-[10px] font-mono truncate flex-1 text-[hsl(var(--muted-foreground))]">{img.file_name}</span>
+                            {deletingImageId === img.id ? (
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <button onClick={() => deleteImage(img.id)}
+                                  className="h-5 px-1.5 rounded text-[9px] font-semibold bg-red-500 text-white hover:bg-red-600">
+                                  Del
+                                </button>
+                                <button onClick={() => setDeletingImageId(null)}
+                                  className="h-5 w-5 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] rounded">
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setDeletingImageId(img.id)}
+                                className="h-5 w-5 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                title="Delete image">
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>

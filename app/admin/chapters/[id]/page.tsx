@@ -1,4 +1,5 @@
 import { query } from '@/lib/db';
+import { imageBaseUrl } from '@/lib/storage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Clock, FileText, ImageIcon, BookOpen, Hash, CheckCircle2 } from 'lucide-react';
@@ -236,7 +237,7 @@ export default async function AdminChapterDetailPage({
                     <div className="p-6">
                       <ChapterMarkdownView
                         content={topic.source_markdown}
-                        imageBaseUrl={`/uploads/chapters/${chapter.id}/`}
+                        imageBaseUrl={imageBaseUrl(chapter.id)}
                       />
                     </div>
                   ) : (
@@ -283,7 +284,7 @@ export default async function AdminChapterDetailPage({
                 <ScrollArea className="h-[600px]">
                     <ChapterMarkdownView
                     content={chapter.content_markdown}
-                    imageBaseUrl={`/uploads/chapters/${chapter.id}/`}
+                    imageBaseUrl={imageBaseUrl(chapter.id)}
                   />
                 </ScrollArea>
               </div>

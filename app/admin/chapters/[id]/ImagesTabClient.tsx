@@ -5,6 +5,16 @@ import { Badge } from '@/components/ui/badge';
 import { ImageIcon } from 'lucide-react';
 import { ImageDetailDialog, type ImageRecord } from './ImageDetailDialog';
 
+/** Rewrite legacy /uploads/chapters/… paths to Supabase Storage URL. */
+function resolveThumbSrc(src: string | null): string | null {
+  if (!src) return null;
+  if (!src.startsWith('/uploads/chapters/')) return src;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!supabaseUrl) return src;
+  const rest = src.replace('/uploads/', '');
+  return `${supabaseUrl}/storage/v1/object/public/chapter-images/${rest}`;
+}
+
 interface Props {
   images: ImageRecord[];
   chapterId: string;
@@ -62,7 +72,10 @@ export function ImagesTabClient({ images: initialImages }: Props) {
                 {img.file_path ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={cacheBusters[img.id] ? `${img.file_path}?t=${cacheBusters[img.id]}` : img.file_path}
+                    src={(() => {
+                      const base = resolveThumbSrc(img.file_path);
+                      return cacheBusters[img.id] ? `${base}?t=${cacheBusters[img.id]}` : base ?? undefined;
+                    })()}
                     alt={img.alt_text ?? img.filename}
                     className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
                     loading="lazy"

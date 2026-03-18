@@ -17,8 +17,21 @@ interface MarkdownRendererProps {
   imageBaseUrl?: string;
 }
 
+// Rewrite legacy local /uploads/chapters/… paths to Supabase Storage.
+// This handles chapters whose content_markdown was created before the Supabase migration.
+function rewriteLocalPath(src: string): string {
+  if (!src.startsWith('/uploads/chapters/')) return src;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!supabaseUrl) return src;
+  // /uploads/chapters/<id>/file.jpg  →  <supabase>/storage/v1/object/public/chapter-images/chapters/<id>/file.jpg
+  const rest = src.replace('/uploads/', '');
+  return `${supabaseUrl}/storage/v1/object/public/chapter-images/${rest}`;
+}
+
 function resolveImageSrc(src: string, baseUrl?: string): string {
   if (!src) return src;
+  // Rewrite legacy /uploads/chapters/ absolute paths first
+  if (src.startsWith('/uploads/chapters/')) return rewriteLocalPath(src);
   if (src.startsWith('http') || src.startsWith('/') || src.startsWith('data:')) return src;
   if (baseUrl) return baseUrl.replace(/\/?$/, '/') + src;
   return src;

@@ -258,7 +258,7 @@ export async function getQuestionStats(): Promise<{
 
 export async function createBatch(
   topicId: string,
-  uploadedBy: string,
+  uploadedBy: string | null,
   totalQuestions: number
 ): Promise<string> {
   const rows = await query<{ id: string }>(

@@ -10,6 +10,7 @@ import {
 } from '@/lib/questions/api';
 import { storeQuestionMedia } from '@/lib/questions/storage';
 import { validateQuestion } from '@/lib/questions/validation';
+import { createClient } from '@/lib/supabase/server';
 import type { ParsedQuestion, Question } from '@/lib/questions/types';
 
 interface IngestError {
@@ -32,8 +33,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'topicId field is required' }, { status: 400 });
     }
 
-    // TODO: replace 'system' with actual user ID from session when auth is wired
-    const uploadedBy = (formData.get('uploadedBy') as string) ?? 'system';
+    // Get the authenticated user's ID from the session
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    const uploadedBy: string | null = user?.id ?? null;
 
     let questions: ParsedQuestion[];
     try {

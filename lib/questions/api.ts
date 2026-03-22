@@ -45,7 +45,6 @@ export async function getTaxonomyTree(): Promise<TaxonomyTextbook[]> {
     FROM textbooks tb
     JOIN chapters ch ON ch.textbook_id = tb.id
     JOIN topics   t  ON t.chapter_id   = ch.id
-    WHERE tb.is_published = true
     ORDER BY tb.grade, tb.part NULLS LAST, ch.chapter_number, t.order_index
   `);
 

@@ -54,6 +54,19 @@ export function questionMediaPublicUrl(storagePath: string): string {
   return `/uploads/questions/${storagePath}`;
 }
 
+// ── Ensure bucket exists (creates it if missing) ──────────────────────────────
+
+async function ensureBucket(supabase: Awaited<ReturnType<typeof getStorageClient>>) {
+  const { data: buckets } = await supabase.storage.listBuckets();
+  const exists = buckets?.some((b) => b.name === BUCKET);
+  if (!exists) {
+    const { error } = await supabase.storage.createBucket(BUCKET, { public: true });
+    if (error && error.message !== 'Bucket already exists') {
+      throw new Error(`Failed to create storage bucket: ${error.message}`);
+    }
+  }
+}
+
 // ── storeQuestionMedia ────────────────────────────────────────────────────────
 
 export async function storeQuestionMedia(
@@ -68,6 +81,8 @@ export async function storeQuestionMedia(
 
   if (IS_VERCEL) {
     const supabase = await getStorageClient();
+
+    await ensureBucket(supabase);
 
     const { error } = await supabase.storage
       .from(BUCKET)

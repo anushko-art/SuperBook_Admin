@@ -242,6 +242,7 @@ export function parseQuestionsJson(raw: string): {
 export function questionNeedsImages(q: ParsedQuestion): boolean {
   if (q.question_type === 'image_based') return true;
   if (q.question_image) return true;
+  if (q.solution_image) return true;
   return false;
 }
 
@@ -252,6 +253,10 @@ export function getImageSlotKeys(q: ParsedQuestion, questionIndex: number): stri
 
   if (q.question_image) {
     keys.push(`${questionIndex}_question_image`);
+  }
+
+  if (q.solution_image) {
+    keys.push(`${questionIndex}_solution_image`);
   }
 
   if (q.question_type === 'image_based') {

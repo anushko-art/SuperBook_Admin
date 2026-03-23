@@ -86,6 +86,7 @@ export async function POST(request: Request) {
           textbook_id: taxonomy.textbook_id,
           question_text: q.question_text!,
           question_image_url: null, // set after image upload
+          solution_image_url: null, // set after image upload
           content: q.content!,
           correct_answer: q.correct_answer!,
           correct_answer_detail: q.correct_answer_detail ?? null,
@@ -118,6 +119,15 @@ export async function POST(request: Request) {
           const buffer = Buffer.from(await stemFile.arrayBuffer());
           const url = await storeQuestionMedia(buffer, batchId, i, 'question_image', stemFile.name);
           questionRow.question_image_url = url;
+        }
+
+        // Handle solution image
+        const solutionImageKey = `image_${i}_solution_image`;
+        const solutionFile = formData.get(solutionImageKey) as File | null;
+        if (solutionFile) {
+          const buffer = Buffer.from(await solutionFile.arrayBuffer());
+          const url = await storeQuestionMedia(buffer, batchId, i, 'solution_image', solutionFile.name);
+          questionRow.solution_image_url = url;
         }
 
         // Insert question
@@ -160,6 +170,17 @@ export async function POST(request: Request) {
             questionRow.question_image_url,
             null,
             stemFile.type || 'image/png'
+          );
+        }
+
+        // Insert solution_image media row if uploaded
+        if (solutionFile && questionRow.solution_image_url) {
+          await insertQuestionMedia(
+            questionId,
+            'solution_image',
+            questionRow.solution_image_url,
+            null,
+            solutionFile.type || 'image/png'
           );
         }
 

@@ -333,7 +333,7 @@ export async function insertQuestion(
     `INSERT INTO questions (
        question_type, topic_id, chapter_id, textbook_id,
        question_text, question_image_url, content, correct_answer, correct_answer_detail,
-       solution, scaffolding,
+       solution, solution_image_url, scaffolding,
        subject, class, chapter_name, topic_name,
        exam_name, exam_year, exam_shift,
        difficulty_level, keywords, concept_tags, has_image,
@@ -341,11 +341,11 @@ export async function insertQuestion(
      ) VALUES (
        $1, $2, $3, $4,
        $5, $6, $7, $8, $9,
-       $10, $11,
-       $12, $13, $14, $15,
-       $16, $17, $18,
-       $19, $20, $21, $22,
-       $23, $24, $25
+       $10, $11, $12,
+       $13, $14, $15, $16,
+       $17, $18, $19,
+       $20, $21, $22, $23,
+       $24, $25, $26
      ) RETURNING id`,
     [
       q.question_type,
@@ -358,6 +358,7 @@ export async function insertQuestion(
       q.correct_answer,
       q.correct_answer_detail ? JSON.stringify(q.correct_answer_detail) : null,
       q.solution,
+      q.solution_image_url,
       q.scaffolding ? JSON.stringify(q.scaffolding) : null,
       q.subject,
       q.class,

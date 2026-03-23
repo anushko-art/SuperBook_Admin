@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS questions (
   correct_answer        TEXT NOT NULL,
   correct_answer_detail JSONB,
   solution              TEXT,
+  solution_image_url    TEXT,
   scaffolding           JSONB,
 
   -- Denormalized taxonomy (overwritten at ingest from DB, not from JSON)

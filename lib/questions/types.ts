@@ -92,6 +92,7 @@ export interface Question {
   correct_answer: string;
   correct_answer_detail: Record<string, string> | null; // matching only: {A:"4", B:"1", ...}
   solution: string | null;
+  solution_image_url: string | null;
   scaffolding: {
     hint?: string;
     concept_pointer?: string;
@@ -131,6 +132,7 @@ export interface ParsedQuestion {
   correct_answer?: string;
   correct_answer_detail?: Record<string, string> | null;
   solution?: string | null;
+  solution_image?: string | null;
   scaffolding?: Question['scaffolding'];
   taxonomy?: {
     subject?: string;

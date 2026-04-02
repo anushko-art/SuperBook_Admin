@@ -6,12 +6,13 @@ import { ArrowLeft, Clock, FileText, ImageIcon, BookOpen, Hash, CheckCircle2 } f
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
 import { notFound } from 'next/navigation';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChapterMarkdownView } from './ChapterMarkdownView';
 import { ContentGeneratedTab } from './ContentGeneratedTab';
 import { GenerateVisualTab } from './GenerateVisualTab';
 import { ImagesTabClient } from './ImagesTabClient';
+import { ChapterAdminTabsWrapper } from './ChapterTabsNavClient';
 
 interface Chapter {
   id: string; textbook_id: string; title: string; chapter_number: number;
@@ -178,8 +179,18 @@ export default async function AdminChapterDetailPage({
       </div>
 
       {/* Content tabs */}
-      <Tabs defaultValue="topics">
-        <TabsList>
+      <ChapterAdminTabsWrapper
+        defaultValue="topics"
+        selectTabs={[
+          { value: 'topics', label: `Topics (${topics.length})` },
+          { value: 'generated', label: `Generated Content${(totalFlashcards + totalQuiz) > 0 ? ` (${totalFlashcards + totalQuiz})` : ''}` },
+          { value: 'visuals', label: 'Visuals' },
+          { value: 'content', label: 'Chapter Content' },
+          { value: 'images', label: `Images (${images.length})` },
+          { value: 'raw', label: 'Raw Markdown' },
+        ]}
+      >
+        <TabsList className="hidden md:flex">
           <TabsTrigger value="topics">Topics ({topics.length})</TabsTrigger>
           <TabsTrigger value="generated">
             Generated Content
@@ -324,7 +335,7 @@ export default async function AdminChapterDetailPage({
             </ScrollArea>
           </div>
         </TabsContent>
-      </Tabs>
+      </ChapterAdminTabsWrapper>
     </div>
   );
 }

@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
-  BookOpen, ChevronRight, Upload, Plus, FileText,
-  ImageIcon, CheckCircle2, Clock, Loader2, RefreshCw, X, HelpCircle,
-  Trash2, ChevronUp, ChevronDown, Pencil, Check,
+  BookOpen, Upload, Plus, FileText, ImageIcon, CheckCircle2, Clock,
+  Loader2, RefreshCw, X, HelpCircle, Trash2, ChevronUp, ChevronDown,
+  Pencil, Check, ChevronRight, BookMarked, Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,12 +15,18 @@ import { toast } from '@/components/ui/sonner';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Link from 'next/link';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
+import ReferenceBooksTab from './_components/ReferenceBooksTab';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface Textbook { id: string; title: string; subject: string; grade: string; part: string; total_chapters: number }
 interface Chapter  { id: string; title: string; chapter_number: number; content_length: number; is_published: boolean }
 interface Topic    { id: string; title: string; order_index: number; content_id: string | null; source_markdown: string | null; flashcard_count: number; quiz_count: number }
+interface Subtopic { id: string; topic_id: string; title: string; source_markdown: string | null; order_index: number }
 interface IndexedImage { id: string; file_name: string; file_path: string }
+interface PreviewItem { type: 'topic' | 'subtopic'; id: string; title: string; source_markdown: string | null }
 
 /* ─── Helper ─────────────────────────────────────────────────────────────── */
 function extractImageRefs(markdown: string): string[] {
@@ -28,30 +34,179 @@ function extractImageRefs(markdown: string): string[] {
   return [...new Set(matches)];
 }
 
+/* ─── Create Textbook dialog ─────────────────────────────────────────────── */
+const GRADE_OPTIONS   = [{ label: 'XI',    value: '11' }, { label: 'XII',    value: '12' }, { label: 'Merged', value: '11-12' }];
+const SUBJECT_OPTIONS = [{ label: 'Phy',   value: 'Physics' }, { label: 'Chem',   value: 'Chemistry' }, { label: 'Bio',    value: 'Biology' }, { label: 'Math',   value: 'Mathematics' }];
+
+function CreateTextbookDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [title,     setTitle]     = useState('');
+  const [grade,     setGrade]     = useState('');
+  const [subject,   setSubject]   = useState('');
+  const [part,      setPart]      = useState('');
+  const [publisher, setPublisher] = useState('NCERT');
+  const [saving,    setSaving]    = useState(false);
+
+  const handleSave = async () => {
+    if (!title.trim() || !subject || !grade) { toast.error('Title, subject and grade are required'); return; }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/textbooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title.trim(), subject, grade, part: part || null, publisher: publisher || null }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast.success('Textbook created');
+      onCreated();
+      onClose();
+    } catch (err) {
+      toast.error('Failed: ' + (err instanceof Error ? err.message : String(err)));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-[hsl(var(--primary))]" />
+            New Text Book
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Book name <span className="text-[hsl(var(--destructive))]">*</span></label>
+            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Physics Part I" className="h-8 text-sm" autoFocus />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Grade <span className="text-[hsl(var(--destructive))]">*</span></label>
+            <div className="flex gap-1.5 flex-wrap">
+              {GRADE_OPTIONS.map(g => (
+                <button key={g.value} onClick={() => setGrade(g.value)}
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors ${
+                    grade === g.value
+                      ? 'bg-amber-400 border-amber-400 text-amber-950'
+                      : 'border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]'
+                  }`}>
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Subject <span className="text-[hsl(var(--destructive))]">*</span></label>
+            <div className="flex gap-1.5 flex-wrap">
+              {SUBJECT_OPTIONS.map(s => (
+                <button key={s.value} onClick={() => setSubject(s.value)}
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors ${
+                    subject === s.value
+                      ? 'bg-[hsl(var(--foreground))] text-[hsl(var(--background))] border-[hsl(var(--foreground))]'
+                      : 'border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]'
+                  }`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Part</label>
+              <Input value={part} onChange={e => setPart(e.target.value)} placeholder="e.g. Part I" className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Publisher</label>
+              <Input value={publisher} onChange={e => setPublisher(e.target.value)} className="h-8 text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || !title.trim() || !subject || !grade}>
+            {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Creating…</> : 'Create Book'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── Create Chapter dialog ──────────────────────────────────────────────── */
+function CreateChapterDialog({
+  textbookId, nextNumber, onClose, onCreated,
+}: { textbookId: string; nextNumber: number; onClose: () => void; onCreated: () => void }) {
+  const [num,   setNum]   = useState(String(nextNumber));
+  const [title, setTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    const n = parseInt(num);
+    if (!title.trim() || isNaN(n)) { toast.error('Chapter number and title are required'); return; }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/chapters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ textbook_id: textbookId, title: title.trim(), chapter_number: n }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast.success('Chapter created');
+      onCreated();
+      onClose();
+    } catch (err) {
+      toast.error('Failed: ' + (err instanceof Error ? err.message : String(err)));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-[hsl(var(--primary))]" />
+            Add Chapter
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex gap-3">
+          <div className="space-y-1.5 w-20 shrink-0">
+            <label className="text-xs font-medium"># <span className="text-[hsl(var(--destructive))]">*</span></label>
+            <Input value={num} onChange={e => setNum(e.target.value)} type="number" min={1} className="h-8 text-sm" autoFocus />
+          </div>
+          <div className="space-y-1.5 flex-1 min-w-0">
+            <label className="text-xs font-medium">Chapter name <span className="text-[hsl(var(--destructive))]">*</span></label>
+            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Units and Measurements" className="h-8 text-sm" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || !title.trim() || !num}>
+            {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Creating…</> : 'Create Chapter'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ─── Create Topic dialog ────────────────────────────────────────────────── */
 function CreateTopicDialog({
   chapterId, nextIndex, onClose, onCreated,
-}: {
-  chapterId: string;
-  nextIndex: number;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [title, setTitle]       = useState('');
+}: { chapterId: string; nextIndex: number; onClose: () => void; onCreated: () => void }) {
+  const [title,    setTitle]    = useState('');
   const [markdown, setMarkdown] = useState('');
-  const [saving, setSaving]     = useState(false);
+  const [saving,   setSaving]   = useState(false);
   const detectedImages = useMemo(() => markdown ? extractImageRefs(markdown) : [], [markdown]);
 
   const handleFileRead = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    /* auto-fill title from filename if not set */
-    if (!title.trim()) {
-      const base = file.name.replace(/\.(md|txt)$/i, '').replace(/_/g, ' ');
-      setTitle(base);
-    }
+    if (!title.trim()) setTitle(file.name.replace(/\.(md|txt)$/i, '').replace(/_/g, ' '));
     const reader = new FileReader();
-    reader.onload = (ev) => setMarkdown(ev.target?.result as string ?? '');
+    reader.onload = ev => setMarkdown(ev.target?.result as string ?? '');
     reader.readAsText(file);
   };
 
@@ -62,12 +217,7 @@ function CreateTopicDialog({
       const res = await fetch('/api/topics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chapter_id: chapterId,
-          title: title.trim(),
-          source_markdown: markdown || null,
-          order_index: nextIndex,
-        }),
+        body: JSON.stringify({ chapter_id: chapterId, title: title.trim(), source_markdown: markdown || null, order_index: nextIndex }),
       });
       if (!res.ok) throw new Error((await res.json()).error);
       toast.success('Topic created');
@@ -75,9 +225,7 @@ function CreateTopicDialog({
       onClose();
     } catch (err) {
       toast.error('Failed: ' + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   return (
@@ -85,67 +233,41 @@ function CreateTopicDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-4 w-4 text-[hsl(var(--primary))]" />
-            Create Topic
+            <Plus className="h-4 w-4 text-[hsl(var(--primary))]" />Create Topic
           </DialogTitle>
-          <DialogDescription>
-            Enter a title and optionally upload or paste the markdown source for this topic.
-          </DialogDescription>
+          <DialogDescription>Enter a title and optionally paste or upload the markdown source.</DialogDescription>
         </DialogHeader>
-
         <div className="flex-1 overflow-hidden flex flex-col gap-3 min-h-0">
-          {/* Title */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Topic title <span className="text-[hsl(var(--destructive))]">*</span></label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. 2.1 Introduction"
-              className="h-8 text-sm"
-              autoFocus
-            />
+            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. 2.1 Introduction" className="h-8 text-sm" autoFocus />
           </div>
-
-          {/* MD file import */}
           <label className="flex items-center gap-2 text-xs cursor-pointer border border-dashed border-[hsl(var(--border))] rounded-lg px-4 py-2.5 hover:bg-[hsl(var(--accent))] transition-colors w-fit">
             <Upload className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
             <span className="text-[hsl(var(--muted-foreground))]">Import .md file (optional)</span>
             <input type="file" accept=".md,.txt" className="sr-only" onChange={handleFileRead} />
           </label>
-
-          {/* Markdown textarea */}
           <Textarea
-            value={markdown}
-            onChange={(e) => setMarkdown(e.target.value)}
-            placeholder="## Section Title&#10;&#10;Paste markdown content here…"
+            value={markdown} onChange={e => setMarkdown(e.target.value)}
+            placeholder="## Section Title&#10;&#10;Paste markdown here…"
             className="flex-1 min-h-[220px] font-mono text-xs resize-none"
           />
-
-          {/* Detected images */}
           {detectedImages.length > 0 && (
             <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.3)] px-3 py-2">
               <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-1.5">
                 {detectedImages.length} image{detectedImages.length !== 1 ? 's' : ''} referenced
               </p>
               <div className="flex flex-wrap gap-1">
-                {detectedImages.map((img) => (
+                {detectedImages.map(img => (
                   <span key={img} className="inline-flex items-center gap-1 text-[10px] font-mono bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded px-1.5 py-0.5">
-                    <ImageIcon className="h-2.5 w-2.5 text-[hsl(var(--muted-foreground))]" />
-                    {img}
+                    <ImageIcon className="h-2.5 w-2.5 text-[hsl(var(--muted-foreground))]" />{img}
                   </span>
                 ))}
               </div>
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1.5">
-                Upload these images in the Images panel after saving.
-              </p>
             </div>
           )}
-
-          {markdown && (
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{markdown.length.toLocaleString()} characters</p>
-          )}
+          {markdown && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{markdown.length.toLocaleString()} characters</p>}
         </div>
-
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button size="sm" onClick={handleSave} disabled={saving || !title.trim()}>
@@ -157,55 +279,35 @@ function CreateTopicDialog({
   );
 }
 
-/* ─── Create Quiz dialog ─────────────────────────────────────────────────── */
-function CreateQuizDialog({
+/* ─── Create Subtopic dialog ─────────────────────────────────────────────── */
+function CreateSubtopicDialog({
   topics, defaultTopicId, onClose, onCreated,
-}: {
-  topics: Topic[];
-  defaultTopicId?: string;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [topicId, setTopicId] = useState(defaultTopicId ?? topics[0]?.id ?? '');
-  const [jsonText, setJsonText] = useState('');
-  const [saving, setSaving]     = useState(false);
-  const [parseError, setParseError] = useState('');
+}: { topics: Topic[]; defaultTopicId?: string; onClose: () => void; onCreated: () => void }) {
+  const [topicId,  setTopicId]  = useState(defaultTopicId ?? topics[0]?.id ?? '');
+  const [title,    setTitle]    = useState('');
+  const [markdown, setMarkdown] = useState('');
+  const [saving,   setSaving]   = useState(false);
 
   const handleFileRead = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!title.trim()) setTitle(file.name.replace(/\.(md|txt)$/i, '').replace(/_/g, ' '));
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string ?? '';
-      setJsonText(text);
-      setParseError('');
-      try { JSON.parse(text); } catch { setParseError('Invalid JSON'); }
-    };
+    reader.onload = ev => setMarkdown(ev.target?.result as string ?? '');
     reader.readAsText(file);
   };
 
-  const handleTextChange = (v: string) => {
-    setJsonText(v);
-    setParseError('');
-    if (v.trim()) { try { JSON.parse(v); } catch { setParseError('Invalid JSON'); } }
-  };
-
   const handleSave = async () => {
-    if (!topicId) { toast.error('Select a topic'); return; }
-    let questions: unknown[];
-    try { questions = JSON.parse(jsonText); } catch { toast.error('Invalid JSON'); return; }
-    if (!Array.isArray(questions)) { toast.error('JSON must be an array of questions'); return; }
-
+    if (!title.trim() || !topicId) { toast.error('Title and topic are required'); return; }
     setSaving(true);
     try {
-      const res = await fetch('/api/admin/quiz', {
+      const res = await fetch('/api/subtopics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic_id: topicId, questions }),
+        body: JSON.stringify({ topic_id: topicId, title: title.trim(), source_markdown: markdown || null }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      toast.success(`Created ${data.inserted} quiz question${data.inserted !== 1 ? 's' : ''}`);
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast.success('Subtopic created');
       onCreated();
       onClose();
     } catch (err) {
@@ -213,39 +315,18 @@ function CreateQuizDialog({
     } finally { setSaving(false); }
   };
 
-  const exampleJson = JSON.stringify([
-    {
-      question_text: "What is the SI unit of velocity?",
-      question_type: "mcq",
-      options: [
-        { id: 1, text: "m/s²", is_correct: false },
-        { id: 2, text: "m/s", is_correct: true },
-        { id: 3, text: "km/h", is_correct: false },
-        { id: 4, text: "N", is_correct: false },
-      ],
-      correct_answer_id: 2,
-      explanation: "Velocity is displacement per unit time, so its SI unit is m/s.",
-      difficulty_level: "easy",
-    },
-  ], null, 2);
-
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <HelpCircle className="h-4 w-4 text-[hsl(var(--primary))]" />
-            Upload Quiz Questions
+            <Plus className="h-4 w-4 text-[hsl(var(--primary))]" />Create Subtopic
           </DialogTitle>
-          <DialogDescription>
-            Select a topic and upload or paste a JSON array of MCQ questions.
-          </DialogDescription>
+          <DialogDescription>Select the parent topic, then provide a title and optional markdown content.</DialogDescription>
         </DialogHeader>
-
         <div className="flex-1 overflow-hidden flex flex-col gap-3 min-h-0">
-          {/* Topic selector */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium">Topic <span className="text-[hsl(var(--destructive))]">*</span></label>
+            <label className="text-xs font-medium">Parent topic <span className="text-[hsl(var(--destructive))]">*</span></label>
             <Select value={topicId} onValueChange={setTopicId}>
               <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select topic…" /></SelectTrigger>
               <SelectContent>
@@ -257,40 +338,178 @@ function CreateQuizDialog({
               </SelectContent>
             </Select>
           </div>
-
-          {/* File import */}
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs cursor-pointer border border-dashed border-[hsl(var(--border))] rounded-lg px-4 py-2 hover:bg-[hsl(var(--accent))] transition-colors">
-              <Upload className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
-              <span className="text-[hsl(var(--muted-foreground))]">Import .json file</span>
-              <input type="file" accept=".json" className="sr-only" onChange={handleFileRead} />
-            </label>
-            <button
-              className="text-xs text-[hsl(var(--primary))] hover:underline"
-              onClick={() => { setJsonText(exampleJson); setParseError(''); }}
-            >
-              Load example
-            </button>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Subtopic title <span className="text-[hsl(var(--destructive))]">*</span></label>
+            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. 2.3.1 Scalar and Vector Quantities" className="h-8 text-sm" autoFocus />
           </div>
+          <label className="flex items-center gap-2 text-xs cursor-pointer border border-dashed border-[hsl(var(--border))] rounded-lg px-4 py-2.5 hover:bg-[hsl(var(--accent))] transition-colors w-fit">
+            <Upload className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
+            <span className="text-[hsl(var(--muted-foreground))]">Import .md file (optional)</span>
+            <input type="file" accept=".md,.txt" className="sr-only" onChange={handleFileRead} />
+          </label>
+          <Textarea
+            value={markdown} onChange={e => setMarkdown(e.target.value)}
+            placeholder="Paste markdown content here…"
+            className="flex-1 min-h-[200px] font-mono text-xs resize-none"
+          />
+          {markdown && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{markdown.length.toLocaleString()} characters</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || !title.trim() || !topicId}>
+            {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Creating…</> : 'Create Subtopic'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-          {/* JSON textarea */}
+/* ─── Edit markdown dialog (topic or subtopic) ───────────────────────────── */
+function EditMarkdownDialog({
+  label, currentMarkdown, onClose, onSave,
+}: { label: string; currentMarkdown: string | null; onClose: () => void; onSave: (md: string) => Promise<void> }) {
+  const [markdown, setMarkdown] = useState(currentMarkdown ?? '');
+  const [saving,   setSaving]   = useState(false);
+  const detectedImages = useMemo(() => extractImageRefs(markdown), [markdown]);
+
+  const handleFileRead = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setMarkdown(ev.target?.result as string ?? '');
+    reader.readAsText(file);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(markdown);
+      onClose();
+    } catch (err) {
+      toast.error('Save failed: ' + (err instanceof Error ? err.message : String(err)));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-[hsl(var(--primary))]" />Edit: {label}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-hidden flex flex-col gap-3 min-h-0">
+          <label className="flex items-center gap-2 text-xs cursor-pointer border border-dashed border-[hsl(var(--border))] rounded-lg px-4 py-2.5 hover:bg-[hsl(var(--accent))] transition-colors w-fit">
+            <Upload className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
+            <span className="text-[hsl(var(--muted-foreground))]">Import .md file</span>
+            <input type="file" accept=".md,.txt" className="sr-only" onChange={handleFileRead} />
+          </label>
+          <Textarea
+            value={markdown} onChange={e => setMarkdown(e.target.value)}
+            className="flex-1 min-h-[300px] font-mono text-xs resize-none"
+          />
+          {detectedImages.length > 0 && (
+            <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.3)] px-3 py-2">
+              <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-1.5">
+                {detectedImages.length} image{detectedImages.length !== 1 ? 's' : ''} referenced
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {detectedImages.map(img => (
+                  <span key={img} className="text-[10px] font-mono bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded px-1.5 py-0.5">{img}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {markdown && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{markdown.length.toLocaleString()} characters</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Saving…</> : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── Create Quiz dialog ─────────────────────────────────────────────────── */
+function CreateQuizDialog({
+  topics, defaultTopicId, onClose, onCreated,
+}: { topics: Topic[]; defaultTopicId?: string; onClose: () => void; onCreated: () => void }) {
+  const [topicId, setTopicId] = useState(defaultTopicId ?? topics[0]?.id ?? '');
+  const [jsonText, setJsonText] = useState('');
+  const [saving, setSaving]    = useState(false);
+  const [parseError, setParseError] = useState('');
+
+  const handleFileRead = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text = ev.target?.result as string ?? '';
+      setJsonText(text);
+      setParseError('');
+      try { JSON.parse(text); } catch { setParseError('Invalid JSON'); }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSave = async () => {
+    if (!topicId) { toast.error('Select a topic'); return; }
+    let questions: unknown[];
+    try { questions = JSON.parse(jsonText); } catch { toast.error('Invalid JSON'); return; }
+    if (!Array.isArray(questions)) { toast.error('JSON must be an array'); return; }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/admin/quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic_id: topicId, questions }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`Created ${data.inserted} question${data.inserted !== 1 ? 's' : ''}`);
+      onCreated();
+      onClose();
+    } catch (err) {
+      toast.error('Failed: ' + (err instanceof Error ? err.message : String(err)));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <HelpCircle className="h-4 w-4 text-[hsl(var(--primary))]" />Upload Quiz Questions
+          </DialogTitle>
+          <DialogDescription>Select a topic and paste a JSON array of MCQ questions.</DialogDescription>
+        </DialogHeader>
+        <div className="flex-1 overflow-hidden flex flex-col gap-3 min-h-0">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Topic <span className="text-[hsl(var(--destructive))]">*</span></label>
+            <Select value={topicId} onValueChange={setTopicId}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select topic…" /></SelectTrigger>
+              <SelectContent>
+                {topics.map(t => <SelectItem key={t.id} value={t.id} className="text-sm">{t.order_index + 1}. {t.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <label className="flex items-center gap-2 text-xs cursor-pointer border border-dashed border-[hsl(var(--border))] rounded-lg px-4 py-2 hover:bg-[hsl(var(--accent))] transition-colors w-fit">
+            <Upload className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
+            <span className="text-[hsl(var(--muted-foreground))]">Import .json file</span>
+            <input type="file" accept=".json" className="sr-only" onChange={handleFileRead} />
+          </label>
           <Textarea
             value={jsonText}
-            onChange={(e) => handleTextChange(e.target.value)}
-            placeholder={'[\n  {\n    "question_text": "...",\n    "options": [...],\n    "correct_answer_id": 1\n  }\n]'}
+            onChange={e => { setJsonText(e.target.value); setParseError(''); if (e.target.value.trim()) { try { JSON.parse(e.target.value); } catch { setParseError('Invalid JSON'); } } }}
+            placeholder={'[\n  { "question_text": "...", "options": [...], "correct_answer_id": 1 }\n]'}
             className="flex-1 min-h-[240px] font-mono text-xs resize-none"
           />
-
-          {parseError && (
-            <p className="text-xs text-[hsl(var(--destructive))]">{parseError}</p>
-          )}
-          {jsonText && !parseError && (
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-              {(() => { try { const a = JSON.parse(jsonText); return Array.isArray(a) ? `${a.length} question${a.length !== 1 ? 's' : ''} ready` : 'JSON is not an array'; } catch { return ''; } })()}
-            </p>
-          )}
+          {parseError && <p className="text-xs text-[hsl(var(--destructive))]">{parseError}</p>}
         </div>
-
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button size="sm" onClick={handleSave} disabled={saving || !jsonText.trim() || !!parseError || !topicId}>
@@ -302,169 +521,69 @@ function CreateQuizDialog({
   );
 }
 
-/* ─── Edit Topic markdown dialog ─────────────────────────────────────────── */
-function EditTopicDialog({
-  topic, onClose, onSaved,
-}: {
-  topic: Topic;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [markdown, setMarkdown] = useState(topic.source_markdown ?? '');
-  const [saving, setSaving]     = useState(false);
-  const detectedImages = useMemo(() => extractImageRefs(markdown), [markdown]);
-
-  const handleFileRead = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setMarkdown(ev.target?.result as string ?? '');
-    reader.readAsText(file);
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/topics/${topic.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_markdown: markdown }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error);
-      toast.success('Topic content saved');
-      onSaved();
-      onClose();
-    } catch (err) {
-      toast.error('Save failed: ' + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-[hsl(var(--primary))]" />
-            Edit Markdown — {topic.order_index + 1}. {topic.title}
-          </DialogTitle>
-          <DialogDescription>
-            Import or paste the markdown source for this topic.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-hidden flex flex-col gap-3 min-h-0">
-          <label className="flex items-center gap-2 text-xs cursor-pointer border border-dashed border-[hsl(var(--border))] rounded-lg px-4 py-2.5 hover:bg-[hsl(var(--accent))] transition-colors w-fit">
-            <Upload className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
-            <span className="text-[hsl(var(--muted-foreground))]">Import .md file</span>
-            <input type="file" accept=".md,.txt" className="sr-only" onChange={handleFileRead} />
-          </label>
-
-          <Textarea
-            value={markdown}
-            onChange={(e) => setMarkdown(e.target.value)}
-            placeholder="## Section Title&#10;&#10;Paste markdown…"
-            className="flex-1 min-h-[260px] font-mono text-xs resize-none"
-          />
-
-          {detectedImages.length > 0 && (
-            <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.3)] px-3 py-2">
-              <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-1.5">
-                {detectedImages.length} image{detectedImages.length !== 1 ? 's' : ''} referenced
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {detectedImages.map((img) => (
-                  <span key={img} className="inline-flex items-center gap-1 text-[10px] font-mono bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded px-1.5 py-0.5">
-                    <ImageIcon className="h-2.5 w-2.5 text-[hsl(var(--muted-foreground))]" />
-                    {img}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {markdown && (
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{markdown.length.toLocaleString()} characters</p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={saving || !markdown.trim()}>
-            {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Saving…</> : 'Save Content'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /* ─── Main page ──────────────────────────────────────────────────────────── */
 export default function AdminTextbooksPage() {
-  const [textbooks, setTextbooks]               = useState<Textbook[]>([]);
-  const [chapters, setChapters]                 = useState<Chapter[]>([]);
-  const [topics, setTopics]                     = useState<Topic[]>([]);
-  const [indexedImages, setIndexedImages]       = useState<IndexedImage[]>([]);
-  const [selectedSubject, setSelectedSubject]   = useState('');
-  const [selectedGrade, setSelectedGrade]       = useState('');
+  const [textbooks, setTextbooks]             = useState<Textbook[]>([]);
+  const [chapters,  setChapters]              = useState<Chapter[]>([]);
+  const [topics,    setTopics]                = useState<Topic[]>([]);
+  const [subtopics, setSubtopics]             = useState<Subtopic[]>([]);
+  const [indexedImages, setIndexedImages]     = useState<IndexedImage[]>([]);
+  const [selectedSubject,  setSelectedSubject]  = useState('');
+  const [selectedGrade,    setSelectedGrade]    = useState('');
   const [selectedTextbook, setSelectedTextbook] = useState('');
-  const [selectedChapter, setSelectedChapter]   = useState('');
-  const [showCreateTopic, setShowCreateTopic]   = useState(false);
-  const [showCreateQuiz, setShowCreateQuiz]     = useState(false);
-  const [editTopicDialog, setEditTopicDialog]   = useState<Topic | null>(null);
-  const [loadingTopics, setLoadingTopics]       = useState(false);
+  const [selectedChapter,  setSelectedChapter]  = useState('');
+  const [expandedTopics,   setExpandedTopics]   = useState<Set<string>>(new Set());
+  const [previewItem,      setPreviewItem]      = useState<PreviewItem | null>(null);
+  const [loadingTopics,    setLoadingTopics]    = useState(false);
 
-  /* topic inline editing */
-  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle]     = useState('');
-  const [deletingTopicId, setDeletingTopicId] = useState<string | null>(null);
-  const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
+  /* dialogs */
+  const [showCreateBook,     setShowCreateBook]     = useState(false);
+  const [showCreateChapter,  setShowCreateChapter]  = useState(false);
+  const [showCreateTopic,    setShowCreateTopic]    = useState(false);
+  const [showCreateSubtopic, setShowCreateSubtopic] = useState(false);
+  const [showCreateQuiz,     setShowCreateQuiz]     = useState(false);
+  const [editMarkdownItem,   setEditMarkdownItem]   = useState<{ type: 'topic' | 'subtopic'; id: string; title: string; source_markdown: string | null } | null>(null);
 
-  /* bulk image upload */
-  const [uploadFiles, setUploadFiles]     = useState<File[]>([]);
-  const [uploading, setUploading]         = useState(false);
+  /* inline editing */
+  const [editingId,     setEditingId]     = useState<string | null>(null);
+  const [editingType,   setEditingType]   = useState<'topic' | 'subtopic'>('topic');
+  const [editingTitle,  setEditingTitle]  = useState('');
+  const [deletingId,    setDeletingId]    = useState<string | null>(null);
+  const [deletingType,  setDeletingType]  = useState<'topic' | 'subtopic' | 'image'>('topic');
+
+  /* image upload */
+  const [uploadFiles,   setUploadFiles]   = useState<File[]>([]);
+  const [uploading,     setUploading]     = useState(false);
   const [uploadTopicId, setUploadTopicId] = useState('');
-  const fileInputRef                      = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /* ── loaders ── */
   const loadTextbooks = useCallback(() => {
     fetch('/api/textbooks').then(r => r.json()).then(d => setTextbooks(d.textbooks ?? []));
   }, []);
   useEffect(() => { loadTextbooks(); }, [loadTextbooks]);
 
-  /* derived filter options */
-  const subjectOptions = useMemo(() => Array.from(new Set(textbooks.map(t => t.subject))).sort(), [textbooks]);
-  const gradeOptions   = useMemo(() =>
-    selectedSubject
-      ? Array.from(new Set(textbooks.filter(t => t.subject === selectedSubject).map(t => t.grade))).sort()
-      : [],
-  [textbooks, selectedSubject]);
-  const bookOptions = useMemo(() => textbooks.filter(t =>
-    (!selectedSubject || t.subject === selectedSubject) &&
-    (!selectedGrade   || t.grade   === selectedGrade)
-  ), [textbooks, selectedSubject, selectedGrade]);
-
-  /* load chapters when book changes */
   useEffect(() => {
-    setChapters([]); setSelectedChapter(''); setTopics([]); setIndexedImages([]);
+    setChapters([]); setSelectedChapter(''); setTopics([]); setSubtopics([]); setIndexedImages([]);
     if (!selectedTextbook) return;
-    fetch(`/api/chapters?textbook_id=${selectedTextbook}`)
-      .then(r => r.json()).then(d => setChapters(d.chapters ?? []));
+    fetch(`/api/chapters?textbook_id=${selectedTextbook}`).then(r => r.json()).then(d => setChapters(d.chapters ?? []));
   }, [selectedTextbook]);
 
-  /* load topics */
   const loadTopics = useCallback(async () => {
-    setTopics([]);
+    setTopics([]); setSubtopics([]);
     if (!selectedChapter) return;
     setLoadingTopics(true);
     try {
-      const d = await fetch(`/api/topics?chapter_id=${selectedChapter}`).then(r => r.json());
-      setTopics(d.topics ?? []);
+      const [td, sd] = await Promise.all([
+        fetch(`/api/topics?chapter_id=${selectedChapter}`).then(r => r.json()),
+        fetch(`/api/subtopics?chapter_id=${selectedChapter}`).then(r => r.json()),
+      ]);
+      setTopics(td.topics ?? []);
+      setSubtopics(sd.subtopics ?? []);
     } finally { setLoadingTopics(false); }
   }, [selectedChapter]);
   useEffect(() => { loadTopics(); }, [loadTopics]);
 
-  /* load indexed images */
   const loadIndexedImages = useCallback(async () => {
     setIndexedImages([]);
     if (!selectedChapter) return;
@@ -473,85 +592,89 @@ export default function AdminTextbooksPage() {
   }, [selectedChapter]);
   useEffect(() => { loadIndexedImages(); }, [loadIndexedImages]);
 
-  /* image refs referenced in any topic markdown */
-  const referencedImages = useMemo(() => {
-    const refs = topics.flatMap(t => t.source_markdown ? extractImageRefs(t.source_markdown) : []);
-    return [...new Set(refs)];
-  }, [topics]);
+  /* ── derived ── */
+  const subjectOptions = useMemo(() => Array.from(new Set(textbooks.map(t => t.subject))).sort(), [textbooks]);
+  const gradeOptions   = useMemo(() =>
+    selectedSubject ? Array.from(new Set(textbooks.filter(t => t.subject === selectedSubject).map(t => t.grade))).sort() : [],
+  [textbooks, selectedSubject]);
+  const bookOptions = useMemo(() => textbooks.filter(t =>
+    (!selectedSubject || t.subject === selectedSubject) && (!selectedGrade || t.grade === selectedGrade)
+  ), [textbooks, selectedSubject, selectedGrade]);
 
+  const activeBook    = textbooks.find(t => t.id === selectedTextbook) ?? null;
+  const activeChapter = chapters.find(c => c.id === selectedChapter) ?? null;
+  const subtopicsByTopic = useMemo(() => {
+    const map = new Map<string, Subtopic[]>();
+    for (const s of subtopics) {
+      if (!map.has(s.topic_id)) map.set(s.topic_id, []);
+      map.get(s.topic_id)!.push(s);
+    }
+    return map;
+  }, [subtopics]);
+  const referencedImages = useMemo(() => {
+    const refs = topics.flatMap(t => t.source_markdown ? extractImageRefs(t.source_markdown) : [])
+      .concat(subtopics.flatMap(s => s.source_markdown ? extractImageRefs(s.source_markdown) : []));
+    return [...new Set(refs)];
+  }, [topics, subtopics]);
   const indexedSet = useMemo(() => new Set(indexedImages.map(i => i.file_name)), [indexedImages]);
 
-  const activeChapter = chapters.find(c => c.id === selectedChapter) ?? null;
-  const activeBook    = textbooks.find(t => t.id === selectedTextbook) ?? null;
-
-  /* topic: save inline title edit */
-  const saveTopicTitle = async (id: string) => {
+  /* ── topic CRUD ── */
+  const saveTitle = async (type: 'topic' | 'subtopic', id: string) => {
     const trimmed = editingTitle.trim();
-    if (!trimmed) { setEditingTitleId(null); return; }
+    if (!trimmed) { setEditingId(null); return; }
+    const url = type === 'topic' ? `/api/topics/${id}` : `/api/subtopics/${id}`;
     try {
-      const res = await fetch(`/api/topics/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: trimmed }),
-      });
+      const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: trimmed }) });
       if (!res.ok) throw new Error((await res.json()).error);
-      setTopics(prev => prev.map(t => t.id === id ? { ...t, title: trimmed } : t));
+      if (type === 'topic') setTopics(prev => prev.map(t => t.id === id ? { ...t, title: trimmed } : t));
+      else setSubtopics(prev => prev.map(s => s.id === id ? { ...s, title: trimmed } : s));
     } catch (err) { toast.error('Save failed: ' + (err instanceof Error ? err.message : String(err))); }
-    setEditingTitleId(null);
+    setEditingId(null);
   };
 
-  /* topic: reorder */
   const moveTopic = async (id: string, direction: 'up' | 'down') => {
     const idx = topics.findIndex(t => t.id === id);
     if (idx < 0) return;
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= topics.length) return;
-    const a = topics[idx];
-    const b = topics[swapIdx];
-    // Optimistic UI update
+    const a = topics[idx], b = topics[swapIdx];
     const reordered = [...topics];
     reordered[idx] = { ...a, order_index: b.order_index };
     reordered[swapIdx] = { ...b, order_index: a.order_index };
     reordered.sort((x, y) => x.order_index - y.order_index);
     setTopics(reordered);
-    // Persist both
     await Promise.all([
       fetch(`/api/topics/${a.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_index: b.order_index }) }),
       fetch(`/api/topics/${b.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_index: a.order_index }) }),
     ]);
   };
 
-  /* topic: delete */
-  const deleteTopic = async (id: string) => {
+  const deleteItem = async () => {
+    if (!deletingId) return;
     try {
-      const res = await fetch(`/api/topics/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error((await res.json()).error);
-      setTopics(prev => prev.filter(t => t.id !== id));
-      toast.success('Topic deleted');
+      if (deletingType === 'image') {
+        const res = await fetch(`/api/admin/images/${deletingId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).error);
+        setIndexedImages(prev => prev.filter(img => img.id !== deletingId));
+        toast.success('Image deleted');
+      } else {
+        const url = deletingType === 'topic' ? `/api/topics/${deletingId}` : `/api/subtopics/${deletingId}`;
+        const res = await fetch(url, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).error);
+        if (deletingType === 'topic') setTopics(prev => prev.filter(t => t.id !== deletingId));
+        else setSubtopics(prev => prev.filter(s => s.id !== deletingId));
+        toast.success(`${deletingType === 'topic' ? 'Topic' : 'Subtopic'} deleted`);
+      }
     } catch (err) { toast.error('Delete failed: ' + (err instanceof Error ? err.message : String(err))); }
-    setDeletingTopicId(null);
+    setDeletingId(null);
   };
 
-  /* image: delete */
-  const deleteImage = async (id: string) => {
-    try {
-      const res = await fetch(`/api/admin/images/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error((await res.json()).error);
-      setIndexedImages(prev => prev.filter(img => img.id !== id));
-      toast.success('Image deleted');
-    } catch (err) { toast.error('Delete failed: ' + (err instanceof Error ? err.message : String(err))); }
-    setDeletingImageId(null);
-  };
-
-  /* bulk image upload */
+  /* ── image upload ── */
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    setUploadFiles(prev => {
-      const existingNames = new Set(prev.map(f => f.name));
-      return [...prev, ...files.filter(f => !existingNames.has(f.name))];
-    });
+    setUploadFiles(prev => { const s = new Set(prev.map(f => f.name)); return [...prev, ...files.filter(f => !s.has(f.name))]; });
     e.target.value = '';
   };
-  const removeFile = (name: string) => setUploadFiles(prev => prev.filter(f => f.name !== name));
 
   const handleUpload = async () => {
     if (!selectedChapter || uploadFiles.length === 0) return;
@@ -564,7 +687,7 @@ export default function AdminTextbooksPage() {
       const res = await fetch('/api/admin/images/upload', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast.success(`Uploaded ${data.uploaded} image${data.uploaded !== 1 ? 's' : ''}${data.skipped ? ` (${data.skipped} already existed)` : ''}`);
+      toast.success(`Uploaded ${data.uploaded} image${data.uploaded !== 1 ? 's' : ''}${data.skipped ? ` (${data.skipped} skipped)` : ''}`);
       setUploadFiles([]);
       loadIndexedImages();
     } catch (err) {
@@ -572,289 +695,345 @@ export default function AdminTextbooksPage() {
     } finally { setUploading(false); }
   };
 
+  /* ── render ── */
   return (
-    <div className="p-6 space-y-5">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <BookOpen className="h-5 w-5 text-[hsl(var(--primary))]" />Textbooks
-        </h1>
-        <p className="text-sm text-[hsl(var(--muted-foreground))] mt-0.5">
-          {textbooks.length} textbook{textbooks.length !== 1 ? 's' : ''} in database
-        </p>
-      </div>
+    <div className="p-6 space-y-4">
+      <Tabs defaultValue="textbooks">
+        <TabsList className="mb-1">
+          <TabsTrigger value="textbooks" className="gap-1.5">
+            <BookOpen className="h-3.5 w-3.5" />Text Books
+          </TabsTrigger>
+          <TabsTrigger value="reference" className="gap-1.5">
+            <BookMarked className="h-3.5 w-3.5" />Reference Books
+          </TabsTrigger>
+          <TabsTrigger value="questions" className="gap-1.5">
+            <HelpCircle className="h-3.5 w-3.5" />Question Bank
+          </TabsTrigger>
+        </TabsList>
 
-      {/* ── Filter row ── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Select value={selectedSubject || '__all__'} onValueChange={v => {
-          setSelectedSubject(v === '__all__' ? '' : v); setSelectedGrade(''); setSelectedTextbook('');
-        }}>
-          <SelectTrigger className="h-9 w-40 text-sm"><SelectValue placeholder="Subject" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__" className="text-sm">All subjects</SelectItem>
-            {subjectOptions.map(s => <SelectItem key={s} value={s} className="text-sm">{s}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        {/* ══ TEXT BOOKS TAB ════════════════════════════════════════════════ */}
+        <TabsContent value="textbooks" className="space-y-4 mt-3">
 
-        <Select value={selectedGrade || '__all__'} onValueChange={v => {
-          setSelectedGrade(v === '__all__' ? '' : v); setSelectedTextbook('');
-        }} disabled={!selectedSubject}>
-          <SelectTrigger className="h-9 w-32 text-sm"><SelectValue placeholder="Class" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__" className="text-sm">All classes</SelectItem>
-            {gradeOptions.map(g => <SelectItem key={g} value={g} className="text-sm">Class {g}</SelectItem>)}
-          </SelectContent>
-        </Select>
+          {/* ── Selector bar ── */}
+          <div className="flex flex-wrap items-center gap-3">
 
-        <Select value={selectedTextbook || '__none__'} onValueChange={v => {
-          setSelectedTextbook(v === '__none__' ? '' : v); setSelectedChapter('');
-        }}>
-          <SelectTrigger className="h-9 w-64 text-sm"><SelectValue placeholder="Select book…" /></SelectTrigger>
-          <SelectContent>
-            {bookOptions.length === 0 ? (
-              <SelectItem value="__no_books__" disabled className="text-sm text-[hsl(var(--muted-foreground))]">No books match</SelectItem>
-            ) : bookOptions.map(tb => (
-              <SelectItem key={tb.id} value={tb.id} className="text-sm">
-                {tb.subject} {tb.grade} — {tb.title}{tb.part ? ` (${tb.part})` : ''}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            {/* Select Textbook box */}
+            <div className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 shadow-sm">
+              <Select value={selectedSubject || '__all__'} onValueChange={v => { setSelectedSubject(v === '__all__' ? '' : v); setSelectedGrade(''); setSelectedTextbook(''); }}>
+                <SelectTrigger className="h-8 w-32 text-sm border-0 shadow-none px-2 focus:ring-0"><SelectValue placeholder="Subject" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__" className="text-sm">All subjects</SelectItem>
+                  {subjectOptions.map(s => <SelectItem key={s} value={s} className="text-sm">{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
 
-        {selectedTextbook && (
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={loadTextbooks}>
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
-        )}
-      </div>
+              <Select value={selectedGrade || '__all__'} onValueChange={v => { setSelectedGrade(v === '__all__' ? '' : v); setSelectedTextbook(''); }} disabled={!selectedSubject}>
+                <SelectTrigger className="h-8 w-24 text-sm border-0 shadow-none px-2 focus:ring-0"><SelectValue placeholder="Class" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__" className="text-sm">All</SelectItem>
+                  {gradeOptions.map(g => <SelectItem key={g} value={g} className="text-sm">Class {g}</SelectItem>)}
+                </SelectContent>
+              </Select>
 
-      {/* ── Empty state ── */}
-      {!selectedTextbook && (
-        <div className="py-20 text-center text-sm text-[hsl(var(--muted-foreground))]">
-          <BookOpen className="h-10 w-10 mx-auto mb-3 opacity-25" />
-          <p>Select a subject and class to browse textbooks</p>
-        </div>
-      )}
+              <Select value={selectedTextbook || '__none__'} onValueChange={v => { setSelectedTextbook(v === '__none__' ? '' : v); setSelectedChapter(''); }}>
+                <SelectTrigger className="h-8 w-56 text-sm border-0 shadow-none px-2 focus:ring-0"><SelectValue placeholder="Text Book…" /></SelectTrigger>
+                <SelectContent>
+                  {bookOptions.length === 0
+                    ? <SelectItem value="__no_books__" disabled className="text-sm text-[hsl(var(--muted-foreground))]">No books match</SelectItem>
+                    : bookOptions.map(tb => (
+                      <SelectItem key={tb.id} value={tb.id} className="text-sm">
+                        {tb.subject} {tb.grade} — {tb.title}{tb.part ? ` (${tb.part})` : ''}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
 
-      {/* ── 3-column layout ── */}
-      {selectedTextbook && (
-        <>
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)]" title="Add textbook" onClick={() => setShowCreateBook(true)}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Select Chapter box */}
+            {selectedTextbook && (
+              <div className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 shadow-sm">
+                <Select value={selectedChapter || '__none__'} onValueChange={v => setSelectedChapter(v === '__none__' ? '' : v)}>
+                  <SelectTrigger className="h-8 w-56 text-sm border-0 shadow-none px-2 focus:ring-0">
+                    <SelectValue placeholder="Available Chapter…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chapters.length === 0
+                      ? <SelectItem value="__no_ch__" disabled className="text-sm text-[hsl(var(--muted-foreground))]">No chapters yet</SelectItem>
+                      : chapters.map(ch => (
+                        <SelectItem key={ch.id} value={ch.id} className="text-sm">
+                          Ch {ch.chapter_number} — {ch.title}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)]" title="Add chapter" onClick={() => setShowCreateChapter(true)}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={loadTextbooks}>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* ── Active chapter header ── */}
           {activeBook && (
-            <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2.5">
-              <div className="h-7 w-7 rounded-md bg-[hsl(var(--primary)/0.1)] flex items-center justify-center">
-                <BookOpen className="h-4 w-4 text-[hsl(var(--primary))]" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold truncate">{activeBook.title}</p>
-                <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                  {activeBook.subject} · Class {activeBook.grade}
-                  {activeBook.part && ` · ${activeBook.part}`} · {activeBook.total_chapters} chapters
-                </p>
-              </div>
+            <div className="flex items-center gap-2.5 flex-wrap rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-3 shadow-sm">
+              <span className="text-base font-bold text-[hsl(var(--foreground))]">{activeBook.subject}</span>
+              <Badge variant="outline" className="text-xs px-2 py-0.5 font-bold text-amber-600 border-amber-300">
+                {activeBook.grade === '11' ? 'XI' : activeBook.grade === '12' ? 'XII' : activeBook.grade === '11-12' ? 'Merged' : activeBook.grade}
+              </Badge>
+              <Badge variant="outline" className="text-xs px-2 py-0.5 font-medium">
+                {activeBook.subject}
+              </Badge>
+              {activeBook.part && <Badge variant="secondary" className="text-xs px-2 py-0.5">{activeBook.part}</Badge>}
+              {activeChapter && (
+                <>
+                  <ChevronRight className="h-4 w-4 text-[hsl(var(--muted-foreground))]" />
+                  <span className="text-base font-semibold">
+                    Ch {activeChapter.chapter_number}: {activeChapter.title}
+                  </span>
+                  <Badge variant={activeChapter.is_published ? 'default' : 'secondary'} className="text-xs px-2 py-0.5">
+                    {activeChapter.is_published ? 'Live' : 'Draft'}
+                  </Badge>
+                </>
+              )}
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-4" style={{ minHeight: 520 }}>
+          {/* ── Empty state ── */}
+          {!selectedTextbook && (
+            <div className="py-24 text-center text-sm text-[hsl(var(--muted-foreground))]">
+              <BookOpen className="h-10 w-10 mx-auto mb-3 opacity-20" />
+              <p>Select a textbook to get started, or click <strong>+</strong> to create one.</p>
+            </div>
+          )}
 
-            {/* ── Chapters ── */}
-            <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden flex flex-col">
-              <div className="bg-[hsl(var(--muted))] px-3 py-2 border-b border-[hsl(var(--border))]">
-                <p className="text-xs font-semibold uppercase tracking-wider">Chapters</p>
-              </div>
-              {chapters.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-xs text-[hsl(var(--muted-foreground))]">No chapters</div>
-              ) : (
-                <div className="flex-1 overflow-y-auto divide-y divide-[hsl(var(--border))]">
-                  {chapters.map(ch => (
-                    <button
-                      key={ch.id}
-                      onClick={() => setSelectedChapter(ch.id)}
-                      className={`w-full text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-[hsl(var(--accent))] transition-colors ${
-                        selectedChapter === ch.id ? 'bg-[hsl(var(--accent))] border-l-2 border-[hsl(var(--primary))]' : ''
-                      }`}
-                    >
-                      <span className="h-5 w-5 rounded-full bg-[hsl(var(--muted))] flex items-center justify-center text-[10px] font-mono shrink-0">
-                        {ch.chapter_number}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium leading-snug truncate">{ch.title}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <Badge variant={ch.is_published ? 'default' : 'secondary'} className="text-[9px] h-3.5 px-1">
-                            {ch.is_published ? 'Live' : 'Draft'}
-                          </Badge>
-                          {ch.content_length > 0 && (
-                            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                              {(ch.content_length / 1000).toFixed(1)}k
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <ChevronRight className="h-3 w-3 text-[hsl(var(--muted-foreground))] shrink-0" />
-                    </button>
-                  ))}
-                </div>
+          {/* ── Chapter-level action buttons ── */}
+          {selectedChapter && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => setShowCreateTopic(true)}>
+                <Plus className="h-3.5 w-3.5" />Topic
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => setShowCreateSubtopic(true)} disabled={topics.length === 0}>
+                <Plus className="h-3.5 w-3.5" />Subtopic
+              </Button>
+              {topics.length > 0 && (
+                <Button size="sm" variant="ghost" className="h-8 text-xs gap-1.5 text-amber-600 hover:bg-amber-50" onClick={() => setShowCreateQuiz(true)}>
+                  <HelpCircle className="h-3.5 w-3.5" />Quiz
+                </Button>
               )}
             </div>
+          )}
 
-            {/* ── Topics ── */}
-            <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden flex flex-col">
-              <div className="bg-[hsl(var(--muted))] px-3 py-2 border-b border-[hsl(var(--border))] flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wider">
-                  Topics {selectedChapter && topics.length > 0 && <span className="font-normal text-[hsl(var(--muted-foreground))]">({topics.length})</span>}
-                </p>
-                {selectedChapter && (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      size="sm" variant="ghost"
-                      className="h-6 text-[10px] px-2 gap-0.5 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)]"
-                      onClick={() => setShowCreateTopic(true)}
-                    >
-                      <Plus className="h-3 w-3" />Topic
-                    </Button>
-                    {topics.length > 0 && (
-                      <Button
-                        size="sm" variant="ghost"
-                        className="h-6 text-[10px] px-2 gap-0.5 text-amber-600 hover:bg-amber-50"
-                        onClick={() => setShowCreateQuiz(true)}
-                      >
-                        <HelpCircle className="h-3 w-3" />Quiz
-                      </Button>
-                    )}
+          {/* ── 3-panel layout ── */}
+          {selectedChapter && (
+            <div className="grid lg:grid-cols-3 gap-4" style={{ minHeight: 520 }}>
+
+              {/* ── Panel 1: Hierarchical topic list ── */}
+              <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden flex flex-col">
+                <div className="bg-[hsl(var(--muted))] px-3 py-2 border-b border-[hsl(var(--border))] flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider">
+                    Topic List {topics.length > 0 && <span className="font-normal text-[hsl(var(--muted-foreground))]">({topics.length})</span>}
+                  </p>
+                  {loadingTopics && <Loader2 className="h-3.5 w-3.5 animate-spin text-[hsl(var(--muted-foreground))]" />}
+                </div>
+
+                {loadingTopics ? (
+                  <div className="flex-1 flex items-center justify-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading…
+                  </div>
+                ) : topics.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-3 text-xs text-[hsl(var(--muted-foreground))] p-4">
+                    <FileText className="h-8 w-8 opacity-20" />
+                    <p className="text-center">No topics yet. Click <strong>+ Topic</strong> above.</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto">
+                    {topics.map((t, i) => {
+                      const subs = subtopicsByTopic.get(t.id) ?? [];
+                      const isExpanded = expandedTopics.has(t.id);
+                      const isSelected = previewItem?.id === t.id && previewItem?.type === 'topic';
+
+                      return (
+                        <div key={t.id}>
+                          {/* Topic row */}
+                          <div className={`flex items-center gap-1 px-2 py-2 hover:bg-[hsl(var(--accent)/0.5)] group border-b border-[hsl(var(--border)/0.5)] ${isSelected ? 'bg-[hsl(var(--accent))] border-l-2 border-l-[hsl(var(--primary))]' : ''}`}>
+                            {/* Expand/collapse */}
+                            <button
+                              onClick={() => setExpandedTopics(prev => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; })}
+                              className="h-5 w-5 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors shrink-0"
+                            >
+                              {subs.length > 0
+                                ? (isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />)
+                                : <span className="w-3" />}
+                            </button>
+
+                            {/* Reorder */}
+                            <div className="flex flex-col shrink-0">
+                              <button onClick={() => moveTopic(t.id, 'up')} disabled={i === 0}
+                                className="h-3.5 w-3.5 flex items-center justify-center text-[hsl(var(--muted-foreground))] disabled:opacity-20 hover:text-[hsl(var(--foreground))]">
+                                <ChevronUp className="h-2.5 w-2.5" />
+                              </button>
+                              <button onClick={() => moveTopic(t.id, 'down')} disabled={i === topics.length - 1}
+                                className="h-3.5 w-3.5 flex items-center justify-center text-[hsl(var(--muted-foreground))] disabled:opacity-20 hover:text-[hsl(var(--foreground))]">
+                                <ChevronDown className="h-2.5 w-2.5" />
+                              </button>
+                            </div>
+
+                            <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono w-5 shrink-0 text-right">{i + 1}.</span>
+
+                            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setPreviewItem({ type: 'topic', id: t.id, title: t.title, source_markdown: t.source_markdown })}>
+                              {editingId === t.id && editingType === 'topic' ? (
+                                <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                  <input autoFocus value={editingTitle} onChange={e => setEditingTitle(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') saveTitle('topic', t.id); if (e.key === 'Escape') setEditingId(null); }}
+                                    className="flex-1 text-xs border border-[hsl(var(--border))] rounded px-1.5 py-0.5 bg-[hsl(var(--background))] min-w-0" />
+                                  <button onClick={() => saveTitle('topic', t.id)} className="text-emerald-600"><Check className="h-3 w-3" /></button>
+                                </div>
+                              ) : (
+                                <p className="text-xs font-medium leading-snug truncate">{t.title}</p>
+                              )}
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {t.content_id
+                                  ? <span className="text-[9px] text-emerald-600 flex items-center gap-0.5"><CheckCircle2 className="h-2.5 w-2.5" />AI Ready</span>
+                                  : <span className="text-[9px] text-[hsl(var(--muted-foreground))] flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />Pending</span>}
+                                {subs.length > 0 && <span className="text-[9px] text-blue-500">{subs.length} sub</span>}
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                              <button onClick={() => { setEditingId(t.id); setEditingType('topic'); setEditingTitle(t.title); }}
+                                className="h-5 w-5 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)]" title="Rename">
+                                <Pencil className="h-2.5 w-2.5" />
+                              </button>
+                              <button onClick={() => setEditMarkdownItem({ type: 'topic', id: t.id, title: t.title, source_markdown: t.source_markdown })}
+                                className="h-5 w-5 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)]" title="Edit markdown">
+                                <FileText className="h-2.5 w-2.5" />
+                              </button>
+                              {deletingId === t.id && deletingType === 'topic' ? (
+                                <div className="flex gap-0.5">
+                                  <button onClick={deleteItem} className="h-5 px-1 rounded text-[9px] font-semibold bg-red-500 text-white hover:bg-red-600">Del</button>
+                                  <button onClick={() => setDeletingId(null)} className="h-5 w-5 rounded flex items-center justify-center hover:bg-[hsl(var(--accent))]"><X className="h-2.5 w-2.5" /></button>
+                                </div>
+                              ) : (
+                                <button onClick={() => { setDeletingId(t.id); setDeletingType('topic'); }}
+                                  className="h-5 w-5 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-50" title="Delete">
+                                  <Trash2 className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Subtopic rows (when expanded) */}
+                          {isExpanded && subs.map(s => {
+                            const isSubSelected = previewItem?.id === s.id && previewItem?.type === 'subtopic';
+                            return (
+                              <div key={s.id} className={`flex items-center gap-1 pl-8 pr-2 py-1.5 hover:bg-[hsl(var(--accent)/0.3)] group border-b border-[hsl(var(--border)/0.3)] ${isSubSelected ? 'bg-[hsl(var(--accent))] border-l-2 border-l-blue-400' : ''}`}>
+                                <span className="text-[9px] text-blue-400 font-mono w-8 shrink-0 text-right">{i + 1}.{s.order_index + 1}</span>
+                                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setPreviewItem({ type: 'subtopic', id: s.id, title: s.title, source_markdown: s.source_markdown })}>
+                                  {editingId === s.id && editingType === 'subtopic' ? (
+                                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                      <input autoFocus value={editingTitle} onChange={e => setEditingTitle(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') saveTitle('subtopic', s.id); if (e.key === 'Escape') setEditingId(null); }}
+                                        className="flex-1 text-[11px] border border-[hsl(var(--border))] rounded px-1.5 py-0.5 bg-[hsl(var(--background))] min-w-0" />
+                                      <button onClick={() => saveTitle('subtopic', s.id)} className="text-emerald-600"><Check className="h-3 w-3" /></button>
+                                    </div>
+                                  ) : (
+                                    <p className="text-[11px] font-medium leading-snug truncate text-[hsl(var(--muted-foreground))]">{s.title}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                  <button onClick={() => { setEditingId(s.id); setEditingType('subtopic'); setEditingTitle(s.title); }}
+                                    className="h-5 w-5 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)]">
+                                    <Pencil className="h-2.5 w-2.5" />
+                                  </button>
+                                  <button onClick={() => setEditMarkdownItem({ type: 'subtopic', id: s.id, title: s.title, source_markdown: s.source_markdown })}
+                                    className="h-5 w-5 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)]">
+                                    <FileText className="h-2.5 w-2.5" />
+                                  </button>
+                                  {deletingId === s.id && deletingType === 'subtopic' ? (
+                                    <div className="flex gap-0.5">
+                                      <button onClick={deleteItem} className="h-5 px-1 rounded text-[9px] font-semibold bg-red-500 text-white">Del</button>
+                                      <button onClick={() => setDeletingId(null)} className="h-5 w-5 rounded flex items-center justify-center hover:bg-[hsl(var(--accent))]"><X className="h-2.5 w-2.5" /></button>
+                                    </div>
+                                  ) : (
+                                    <button onClick={() => { setDeletingId(s.id); setDeletingType('subtopic'); }}
+                                      className="h-5 w-5 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-50">
+                                      <Trash2 className="h-2.5 w-2.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
 
-              {!selectedChapter ? (
-                <div className="flex-1 flex items-center justify-center text-xs text-[hsl(var(--muted-foreground))]">
-                  Select a chapter
+              {/* ── Panel 2: Mini Preview ── */}
+              <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden flex flex-col">
+                <div className="bg-[hsl(var(--muted))] px-3 py-2 border-b border-[hsl(var(--border))] flex items-center gap-2">
+                  <Eye className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
+                  <p className="text-xs font-semibold uppercase tracking-wider">Mini Preview</p>
+                  {previewItem && (
+                    <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] truncate max-w-[140px]">{previewItem.title}</span>
+                  )}
                 </div>
-              ) : loadingTopics ? (
-                <div className="flex-1 flex items-center justify-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading…
-                </div>
-              ) : topics.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-xs text-[hsl(var(--muted-foreground))] p-4">
-                  <FileText className="h-8 w-8 opacity-20" />
-                  <p className="text-center">No topics yet.<br/>Click <strong>+ Create Topic</strong> to add topics one by one.</p>
-                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => setShowCreateTopic(true)}>
-                    <Plus className="h-3.5 w-3.5" />Create First Topic
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto divide-y divide-[hsl(var(--border))]">
-                  {topics.map((t, i) => (
-                    <div key={t.id} className="flex items-center gap-1.5 px-2 py-2 hover:bg-[hsl(var(--accent)/0.5)] group">
-                      {/* Reorder arrows */}
-                      <div className="flex flex-col shrink-0">
-                        <button onClick={() => moveTopic(t.id, 'up')} disabled={i === 0}
-                          className="h-4 w-4 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] disabled:opacity-20 transition-colors">
-                          <ChevronUp className="h-3 w-3" />
-                        </button>
-                        <button onClick={() => moveTopic(t.id, 'down')} disabled={i === topics.length - 1}
-                          className="h-4 w-4 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] disabled:opacity-20 transition-colors">
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      </div>
-
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))] w-4 shrink-0 text-right font-mono">{i + 1}.</span>
-
-                      <div className="flex-1 min-w-0">
-                        {editingTitleId === t.id ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              autoFocus
-                              value={editingTitle}
-                              onChange={e => setEditingTitle(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveTopicTitle(t.id); if (e.key === 'Escape') setEditingTitleId(null); }}
-                              className="flex-1 text-xs border border-[hsl(var(--border))] rounded px-1.5 py-0.5 bg-[hsl(var(--background))] min-w-0"
-                            />
-                            <button onClick={() => saveTopicTitle(t.id)} className="h-5 w-5 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 rounded">
-                              <Check className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <p className="text-xs font-medium leading-snug truncate">{t.title}</p>
-                        )}
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          {t.content_id
-                            ? <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600"><CheckCircle2 className="h-2.5 w-2.5" />AI Ready</span>
-                            : <span className="inline-flex items-center gap-0.5 text-[9px] text-[hsl(var(--muted-foreground))]"><Clock className="h-2.5 w-2.5" />Pending</span>
-                          }
-                          {t.source_markdown && (
-                            <span className="text-[9px] text-blue-500">md · {extractImageRefs(t.source_markdown).length} img</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Action buttons (visible on hover) */}
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        {/* Rename */}
-                        <button onClick={() => { setEditingTitleId(t.id); setEditingTitle(t.title); }}
-                          className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)] transition-colors"
-                          title="Rename topic">
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                        {/* Edit markdown */}
-                        <button onClick={() => setEditTopicDialog(t)}
-                          className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)] transition-colors"
-                          title="Edit markdown content">
-                          <Upload className="h-3 w-3" />
-                        </button>
-                        {/* Delete */}
-                        {deletingTopicId === t.id ? (
-                          <div className="flex items-center gap-0.5">
-                            <button onClick={() => deleteTopic(t.id)}
-                              className="h-6 px-1.5 rounded text-[9px] font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors">
-                              Delete
-                            </button>
-                            <button onClick={() => setDeletingTopicId(null)}
-                              className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] transition-colors">
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button onClick={() => setDeletingTopicId(t.id)}
-                            className="h-6 w-6 rounded flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-50 transition-colors"
-                            title="Delete topic">
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
+                <div className="flex-1 overflow-y-auto p-3">
+                  {!previewItem ? (
+                    <div className="h-full flex flex-col items-center justify-center text-xs text-[hsl(var(--muted-foreground))] gap-2">
+                      <Eye className="h-8 w-8 opacity-20" />
+                      <p>Click a topic or subtopic to preview</p>
                     </div>
-                  ))}
+                  ) : !previewItem.source_markdown ? (
+                    <div className="h-full flex flex-col items-center justify-center text-xs text-[hsl(var(--muted-foreground))] gap-2">
+                      <FileText className="h-8 w-8 opacity-20" />
+                      <p className="text-center font-medium">{previewItem.title}</p>
+                      <p>No markdown content yet.</p>
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 mt-1"
+                        onClick={() => setEditMarkdownItem({ type: previewItem.type, id: previewItem.id, title: previewItem.title, source_markdown: null })}>
+                        <Upload className="h-3 w-3" />Add content
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="prose prose-sm max-w-none dark:prose-invert text-xs">
+                      <MarkdownRenderer content={previewItem.source_markdown} />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-
-            {/* ── Images column ── */}
-            <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden flex flex-col">
-              <div className="bg-[hsl(var(--muted))] px-3 py-2 border-b border-[hsl(var(--border))] flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wider">Images</p>
-                {selectedChapter && (
-                  <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{indexedImages.length} in DB</span>
-                )}
               </div>
 
-              {!selectedChapter ? (
-                <div className="flex-1 flex items-center justify-center text-xs text-[hsl(var(--muted-foreground))] p-4">
-                  Select a chapter
+              {/* ── Panel 3: Images ── */}
+              <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden flex flex-col">
+                <div className="bg-[hsl(var(--muted))] px-3 py-2 border-b border-[hsl(var(--border))] flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                    <ImageIcon className="h-3.5 w-3.5" />Upload img
+                  </p>
+                  {selectedChapter && <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{indexedImages.length} in DB</span>}
                 </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto flex flex-col gap-3 p-3">
 
-                  {/* Referenced images from topic markdowns */}
+                <div className="flex-1 overflow-y-auto flex flex-col gap-3 p-3">
+                  {/* Referenced images */}
                   {referencedImages.length > 0 && (
                     <div className="rounded-lg border border-[hsl(var(--border))] p-2.5 space-y-1.5">
                       <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">
-                        Referenced in topics ({referencedImages.length})
+                        Referenced ({referencedImages.length})
                       </p>
-                      <div className="max-h-32 overflow-y-auto space-y-0.5">
+                      <div className="max-h-28 overflow-y-auto space-y-0.5">
                         {referencedImages.map(img => (
                           <div key={img} className="flex items-center gap-1.5">
                             {indexedSet.has(img)
                               ? <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-                              : <Clock className="h-3 w-3 text-amber-500 shrink-0" />
-                            }
+                              : <Clock className="h-3 w-3 text-amber-500 shrink-0" />}
                             <span className="text-[10px] font-mono truncate text-[hsl(var(--muted-foreground))]">{img}</span>
                           </div>
                         ))}
@@ -865,108 +1044,67 @@ export default function AdminTextbooksPage() {
                     </div>
                   )}
 
-                  {/* File picker */}
+                  {/* Upload zone */}
                   <div className="rounded-lg border border-dashed border-[hsl(var(--border))] p-3 space-y-2">
-                    <p className="text-xs font-medium flex items-center gap-1.5">
-                      <ImageIcon className="h-3.5 w-3.5 text-[hsl(var(--primary))]" />
-                      Bulk image upload
-                    </p>
-                    {/* Topic tag selector */}
                     {topics.length > 0 && (
                       <Select value={uploadTopicId || '__none__'} onValueChange={v => setUploadTopicId(v === '__none__' ? '' : v)}>
-                        <SelectTrigger className="h-7 text-xs w-full">
-                          <SelectValue placeholder="Tag with topic (optional)" />
-                        </SelectTrigger>
+                        <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="Tag with topic (optional)" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__" className="text-xs">No topic tag</SelectItem>
-                          {topics.map(t => (
-                            <SelectItem key={t.id} value={t.id} className="text-xs">
-                              {t.order_index + 1}. {t.title}
-                            </SelectItem>
-                          ))}
+                          {topics.map(t => <SelectItem key={t.id} value={t.id} className="text-xs">{t.order_index + 1}. {t.title}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     )}
-                    <label className="flex items-center gap-2 text-xs cursor-pointer border border-[hsl(var(--border))] rounded-md px-3 py-2 hover:bg-[hsl(var(--accent))] transition-colors w-full justify-center">
+                    <label className="flex items-center justify-center gap-2 text-xs cursor-pointer border border-[hsl(var(--border))] rounded-md px-3 py-2.5 hover:bg-[hsl(var(--accent))] transition-colors w-full">
                       <Upload className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
                       <span>Select images…</span>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*,.jpeg,.jpg,.png,.gif,.webp"
-                        multiple
-                        className="sr-only"
-                        onChange={handleFileSelect}
-                      />
+                      <input ref={fileInputRef} type="file" accept="image/*" multiple className="sr-only" onChange={handleFileSelect} />
                     </label>
                   </div>
 
-                  {/* Upload queue */}
+                  {/* Queue */}
                   {uploadFiles.length > 0 && (
                     <div className="rounded-lg border border-[hsl(var(--border))] p-2.5 space-y-1.5">
-                      <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">
-                        Queued ({uploadFiles.length})
-                      </p>
-                      <div className="max-h-40 overflow-y-auto space-y-0.5">
+                      <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Queued ({uploadFiles.length})</p>
+                      <div className="max-h-32 overflow-y-auto space-y-0.5">
                         {uploadFiles.map(f => (
                           <div key={f.name} className="flex items-center gap-1.5 group">
                             <ImageIcon className="h-3 w-3 text-[hsl(var(--muted-foreground))] shrink-0" />
                             <span className="text-[10px] font-mono flex-1 truncate">{f.name}</span>
                             <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{(f.size / 1024).toFixed(0)}k</span>
-                            <button
-                              onClick={() => removeFile(f.name)}
-                              className="h-4 w-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:text-[hsl(var(--destructive))] transition-opacity"
-                            >
+                            <button onClick={() => setUploadFiles(prev => prev.filter(x => x.name !== f.name))}
+                              className="h-4 w-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:text-[hsl(var(--destructive))]">
                               <X className="h-3 w-3" />
                             </button>
                           </div>
                         ))}
                       </div>
-                      <Button
-                        size="sm"
-                        className="w-full h-7 text-xs gap-1.5 mt-1"
-                        onClick={handleUpload}
-                        disabled={uploading}
-                      >
-                        {uploading
-                          ? <><Loader2 className="h-3 w-3 animate-spin" />Uploading…</>
-                          : <><Upload className="h-3 w-3" />Upload {uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''}</>
-                        }
+                      <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleUpload} disabled={uploading}>
+                        {uploading ? <><Loader2 className="h-3 w-3 animate-spin" />Uploading…</> : <><Upload className="h-3 w-3" />Upload {uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''}</>}
                       </Button>
                     </div>
                   )}
 
-                  {/* Already in DB */}
+                  {/* In DB */}
                   {indexedImages.length > 0 && (
                     <div className="rounded-lg border border-[hsl(var(--border))] p-2.5 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">
-                          In database ({indexedImages.length})
-                        </p>
-                        <button onClick={loadIndexedImages}>
-                          <RefreshCw className="h-3 w-3 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors" />
-                        </button>
+                        <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">In database ({indexedImages.length})</p>
+                        <button onClick={loadIndexedImages}><RefreshCw className="h-3 w-3 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" /></button>
                       </div>
-                      <div className="max-h-36 overflow-y-auto space-y-0.5">
+                      <div className="max-h-32 overflow-y-auto space-y-0.5">
                         {indexedImages.map(img => (
                           <div key={img.id} className="flex items-center gap-1.5 group">
                             <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
                             <span className="text-[10px] font-mono truncate flex-1 text-[hsl(var(--muted-foreground))]">{img.file_name}</span>
-                            {deletingImageId === img.id ? (
-                              <div className="flex items-center gap-0.5 shrink-0">
-                                <button onClick={() => deleteImage(img.id)}
-                                  className="h-5 px-1.5 rounded text-[9px] font-semibold bg-red-500 text-white hover:bg-red-600">
-                                  Del
-                                </button>
-                                <button onClick={() => setDeletingImageId(null)}
-                                  className="h-5 w-5 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] rounded">
-                                  <X className="h-3 w-3" />
-                                </button>
+                            {deletingId === img.id && deletingType === 'image' ? (
+                              <div className="flex gap-0.5 shrink-0">
+                                <button onClick={deleteItem} className="h-5 px-1.5 rounded text-[9px] font-semibold bg-red-500 text-white hover:bg-red-600">Del</button>
+                                <button onClick={() => setDeletingId(null)} className="h-5 w-5 rounded flex items-center justify-center hover:bg-[hsl(var(--accent))]"><X className="h-3 w-3" /></button>
                               </div>
                             ) : (
-                              <button onClick={() => setDeletingImageId(img.id)}
-                                className="h-5 w-5 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                title="Delete image">
+                              <button onClick={() => { setDeletingId(img.id); setDeletingType('image'); }}
+                                className="h-5 w-5 flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 shrink-0">
                                 <Trash2 className="h-3 w-3" />
                               </button>
                             )}
@@ -978,42 +1116,80 @@ export default function AdminTextbooksPage() {
 
                   {referencedImages.length === 0 && indexedImages.length === 0 && uploadFiles.length === 0 && (
                     <p className="text-[11px] text-[hsl(var(--muted-foreground))] text-center py-6">
-                      Create topics with markdown content to see referenced images here.
+                      Add topics with markdown content to see referenced images here.
                     </p>
                   )}
                 </div>
-              )}
+              </div>
+
             </div>
+          )}
+        </TabsContent>
 
+        {/* ══ REFERENCE BOOKS TAB ══════════════════════════════════════════ */}
+        <TabsContent value="reference" className="mt-3">
+          <ReferenceBooksTab />
+        </TabsContent>
+
+        {/* ══ QUESTION BANK TAB ════════════════════════════════════════════ */}
+        <TabsContent value="questions" className="mt-3">
+          <div className="py-20 text-center text-sm text-[hsl(var(--muted-foreground))]">
+            <HelpCircle className="h-10 w-10 mx-auto mb-3 opacity-20" />
+            <p className="font-medium text-[hsl(var(--foreground))]">Question Bank</p>
+            <p className="mt-1 text-xs mb-4">Manage and ingest questions from the dedicated section.</p>
+            <div className="flex items-center justify-center gap-3">
+              <Link href="/admin/questions" className="inline-flex items-center gap-1.5 text-xs border border-[hsl(var(--border))] rounded-lg px-4 py-2 hover:bg-[hsl(var(--accent))] transition-colors font-medium">
+                <HelpCircle className="h-3.5 w-3.5" />Browse Questions
+              </Link>
+              <Link href="/admin/questions/ingest" className="inline-flex items-center gap-1.5 text-xs border border-[hsl(var(--border))] rounded-lg px-4 py-2 hover:bg-[hsl(var(--accent))] transition-colors font-medium">
+                <Upload className="h-3.5 w-3.5" />Ingest Questions
+              </Link>
+            </div>
           </div>
-        </>
-      )}
+        </TabsContent>
+      </Tabs>
 
-      {/* ── Create Topic dialog ── */}
+      {/* ── Dialogs ── */}
+      {showCreateBook && (
+        <CreateTextbookDialog onClose={() => setShowCreateBook(false)} onCreated={loadTextbooks} />
+      )}
+      {showCreateChapter && selectedTextbook && (
+        <CreateChapterDialog
+          textbookId={selectedTextbook}
+          nextNumber={chapters.length + 1}
+          onClose={() => setShowCreateChapter(false)}
+          onCreated={() => {
+            fetch(`/api/chapters?textbook_id=${selectedTextbook}`).then(r => r.json()).then(d => setChapters(d.chapters ?? []));
+          }}
+        />
+      )}
       {showCreateTopic && selectedChapter && (
-        <CreateTopicDialog
-          chapterId={selectedChapter}
-          nextIndex={topics.length}
-          onClose={() => setShowCreateTopic(false)}
-          onCreated={loadTopics}
-        />
+        <CreateTopicDialog chapterId={selectedChapter} nextIndex={topics.length} onClose={() => setShowCreateTopic(false)} onCreated={loadTopics} />
       )}
-
-      {/* ── Edit Topic markdown dialog ── */}
-      {editTopicDialog && (
-        <EditTopicDialog
-          topic={editTopicDialog}
-          onClose={() => setEditTopicDialog(null)}
-          onSaved={loadTopics}
-        />
+      {showCreateSubtopic && topics.length > 0 && (
+        <CreateSubtopicDialog topics={topics} onClose={() => setShowCreateSubtopic(false)} onCreated={loadTopics} />
       )}
-
-      {/* ── Create Quiz dialog ── */}
       {showCreateQuiz && topics.length > 0 && (
-        <CreateQuizDialog
-          topics={topics}
-          onClose={() => setShowCreateQuiz(false)}
-          onCreated={loadTopics}
+        <CreateQuizDialog topics={topics} onClose={() => setShowCreateQuiz(false)} onCreated={loadTopics} />
+      )}
+      {editMarkdownItem && (
+        <EditMarkdownDialog
+          label={editMarkdownItem.title}
+          currentMarkdown={editMarkdownItem.source_markdown}
+          onClose={() => setEditMarkdownItem(null)}
+          onSave={async (md) => {
+            const url = editMarkdownItem.type === 'topic'
+              ? `/api/topics/${editMarkdownItem.id}`
+              : `/api/subtopics/${editMarkdownItem.id}`;
+            const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_markdown: md }) });
+            if (!res.ok) throw new Error((await res.json()).error);
+            toast.success('Content saved');
+            loadTopics();
+            // Update preview if this item is selected
+            if (previewItem?.id === editMarkdownItem.id) {
+              setPreviewItem(prev => prev ? { ...prev, source_markdown: md } : null);
+            }
+          }}
         />
       )}
     </div>

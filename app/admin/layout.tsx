@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Library, BookOpen,
-  FileText, Settings, Table2, Sparkles, ImageIcon,
+  FileText, Settings, Sparkles, ImageIcon,
   HelpCircle, FileJson,
 } from 'lucide-react';
 import { ThemeWrapper } from '@/components/theme-provider';
@@ -18,7 +18,6 @@ const navGroups = [
     label: 'Content',
     items: [
       { href: '/admin', label: 'Overview', icon: LayoutDashboard },
-      { href: '/admin/content', label: 'Manage Content', icon: Table2 },
       { href: '/admin/textbooks', label: 'Ingest Content', icon: Library },
       { href: '/admin/chapters', label: 'Preview Chapter', icon: BookOpen },
       { href: '/admin/generate', label: 'AI Generate', icon: Sparkles },
